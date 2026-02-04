@@ -4,7 +4,6 @@ import os
 import hashlib
 from datetime import datetime
 import time
-import io
 
 # ======================================================
 # CONFIGURACIÓN GENERAL
@@ -36,8 +35,6 @@ def inicializar_sesion():
     # Variables específicas para conteo físico
     if 'modo_escaneo_continuo' not in st.session_state:
         st.session_state.modo_escaneo_continuo = False
-    if 'habilitar_sonidos' not in st.session_state:
-        st.session_state.habilitar_sonidos = False
     if 'producto_actual_conteo' not in st.session_state:
         st.session_state.producto_actual_conteo = None
     if 'conteo_actual_session' not in st.session_state:
@@ -46,12 +43,6 @@ def inicializar_sesion():
         st.session_state.total_escaneos_session = 0
     if 'historial_escaneos' not in st.session_state:
         st.session_state.historial_escaneos = []
-    if 'codigo_input_value' not in st.session_state:  # NUEVO: Para manejar el input
-        st.session_state.codigo_input_value = ""
-
-def play_sound(sound_type="success"):
-    """Función de sonido dummy"""
-    pass
 
 def hash_password(password):
     """Hashear contraseña para seguridad"""
@@ -240,34 +231,6 @@ def actualizar_resumen_conteo(usuario, codigo, producto, area, stock_sistema, nu
     except Exception as e:
         print(f"Error actualizando resumen: {e}")
         return False
-
-def eliminar_registro_conteo(index):
-    """Eliminar un registro específico del archivo de conteos"""
-    try:
-        conteos_df = cargar_conteos()
-        if not conteos_df.empty and 0 <= index < len(conteos_df):
-            conteos_df = conteos_df.drop(index).reset_index(drop=True)
-            guardar_conteos(conteos_df)
-            return True, f"Registro {index + 1} eliminado correctamente"
-        else:
-            return False, "Índice no válido"
-    except Exception as e:
-        return False, f"Error al eliminar: {str(e)}"
-
-def eliminar_todos_conteos():
-    """Eliminar todos los registros de conteos"""
-    try:
-        df_vacio = pd.DataFrame(
-            columns=[
-                "fecha", "usuario", "codigo",
-                "producto", "area",
-                "stock_sistema", "conteo_fisico", "diferencia"
-            ]
-        )
-        guardar_conteos(df_vacio)
-        return True, "Todos los registros han sido eliminados"
-    except Exception as e:
-        return False, f"Error al eliminar todos: {str(e)}"
 
 # ======================================================
 # PÁGINA DE LOGIN
@@ -628,10 +591,10 @@ def mostrar_importar_excel():
             st.error(f"❌ Error: {str(e)}")
 
 # ======================================================
-# 4️⃣ PÁGINA: CONTEO FÍSICO MEJORADO - GUARDA PERMANENTE
+# 4️⃣ PÁGINA: CONTEO FÍSICO MEJORADO - SIMPLIFICADO
 # ======================================================
 def mostrar_conteo_fisico():
-    """Mostrar página de conteo físico con guardado permanente"""
+    """Mostrar página de conteo físico simplificado"""
     if not tiene_permiso("inventario"):
         st.error("⛔ No tienes permisos para acceder a esta sección")
         st.info("Solo usuarios con rol 'inventario' o 'admin' pueden realizar conteos")
@@ -654,20 +617,9 @@ def mostrar_conteo_fisico():
         modo_continuo = st.checkbox(
             "🔄 Modo escaneo continuo",
             value=st.session_state.modo_escaneo_continuo,
-            help="Guarda automáticamente después de cada escaneo"
+            help="Muestra formulario para escanear rápido"
         )
         st.session_state.modo_escaneo_continuo = modo_continuo
-    
-    with col_config2:
-        # Habilitar sonidos deshabilitado
-        st.checkbox(
-            "🔊 Sonidos de confirmación (requiere pygame)",
-            value=False,
-            disabled=True,
-            help="Sonidos deshabilitados"
-        )
-    
-    st.markdown("---")
     
     # Panel de control en tiempo real
     if st.session_state.producto_actual_conteo:
@@ -705,300 +657,265 @@ def mostrar_conteo_fisico():
         
         st.info(f"**Código:** {producto_info.get('codigo', 'N/A')} | **Área:** {producto_info.get('area', 'N/A')}")
     
-    # Sección principal de escaneo
+    # Sección principal de escaneo - FORMULARIO SIMPLIFICADO
+    st.markdown("---")
     st.subheader("📷 Escanear producto")
     
-    # Input para código usando una variable de sesión separada
-    codigo_input = st.text_input(
-        "Código del producto",
-        placeholder="Pase el código por el escáner o ingréselo manualmente",
-        value=st.session_state.get('codigo_input_value', ''),
-        help="Escanea el código de barras",
-        key="codigo_input_widget"  # Key fijo para el widget
-    )
-    
-    # Actualizar la variable de sesión cuando cambia el input
-    if codigo_input != st.session_state.get('codigo_input_value', ''):
-        st.session_state.codigo_input_value = codigo_input
-    
-    # Procesar código ingresado
-    codigo = limpiar_codigo(codigo_input)
-    
-    # Función para procesar un escaneo PERMANENTE
-    def procesar_escaneo_permanente(codigo_escaneado, cantidad=1):
-        """Procesar y guardar PERMANENTEMENTE un escaneo individual"""
-        codigo_limpio = limpiar_codigo(codigo_escaneado)
-        if not codigo_limpio:
-            return False, "Código vacío"
-        
-        # Buscar producto
-        fila = stock_df[stock_df["codigo"].astype(str) == str(codigo_limpio)]
-        
-        if fila.empty:
-            return False, "Producto no encontrado"
-        
-        producto = fila.iloc[0]["producto"]
-        area = fila.iloc[0]["area"]
-        stock_sistema = int(fila.iloc[0]["stock_sistema"])
-        
-        # Calcular total acumulado hasta ahora (hoy)
-        hoy = datetime.now().strftime("%Y-%m-%d")
-        escaneos_hoy = escaneos_df[
-            (escaneos_df["codigo"] == codigo_limpio) &
-            (escaneos_df["usuario"] == st.session_state.nombre)
-        ]
-        if not escaneos_hoy.empty:
-            escaneos_hoy['timestamp'] = pd.to_datetime(escaneos_hoy['timestamp'])
-            escaneos_hoy = escaneos_hoy[escaneos_hoy['timestamp'].dt.strftime('%Y-%m-%d') == hoy]
-        
-        # Calcular nuevo total acumulado
-        total_anterior = escaneos_hoy["cantidad_escaneada"].sum() if not escaneos_hoy.empty else 0
-        nuevo_total_acumulado = total_anterior + cantidad
-        
-        # Crear datos del escaneo para guardar PERMANENTEMENTE
-        timestamp_actual = datetime.now()
-        
-        escaneo_data = {
-            "timestamp": timestamp_actual,
-            "usuario": st.session_state.nombre,
-            "codigo": codigo_limpio,
-            "producto": producto,
-            "area": area,
-            "cantidad_escaneada": cantidad,
-            "total_acumulado": nuevo_total_acumulado,
-            "stock_sistema": stock_sistema,
-            "tipo_operacion": "ESCANEO"
-        }
-        
-        # GUARDAR PERMANENTEMENTE el escaneo individual
-        exito_guardado, mensaje_guardado = guardar_escaneo_detallado(escaneo_data)
-        
-        if not exito_guardado:
-            return False, f"Error al guardar: {mensaje_guardado}"
-        
-        # Actualizar el resumen diario de conteos
-        actualizar_resumen_conteo(
-            st.session_state.nombre, 
-            codigo_limpio, 
-            producto, 
-            area, 
-            stock_sistema, 
-            nuevo_total_acumulado
+    # Formulario para escaneo
+    with st.form("form_escaneo", clear_on_submit=True):
+        codigo = st.text_input(
+            "Código del producto",
+            placeholder="Pase el código por el escáner o ingréselo manualmente",
+            help="Escanea el código de barras",
+            key="codigo_escaneo"
         )
         
-        # Actualizar variables de sesión
-        st.session_state.producto_actual_conteo = {
-            'codigo': codigo_limpio,
-            'nombre': producto,
-            'area': area,
-            'stock_sistema': stock_sistema
-        }
-        st.session_state.conteo_actual_session = nuevo_total_acumulado
-        st.session_state.total_escaneos_session += 1
+        cantidad = st.number_input(
+            "Cantidad a sumar",
+            min_value=1,
+            value=1,
+            step=1,
+            help="Cantidad de unidades a sumar"
+        )
         
-        # Limpiar el campo de entrada
-        st.session_state.codigo_input_value = ""
+        col_btn1, col_btn2 = st.columns(2)
         
-        return True, f"✅ {producto[:20]}... +{cantidad} = {nuevo_total_acumulado}"
-    
-    # Procesar código si se ingresó (en modo continuo o al presionar Enter)
-    if codigo and st.session_state.modo_escaneo_continuo:
-        exito, mensaje = procesar_escaneo_permanente(codigo, cantidad=1)
+        with col_btn1:
+            enviar = st.form_submit_button("➕ Sumar cantidad", type="primary", use_container_width=True)
         
-        if exito:
-            st.success(mensaje)
-            # Usar un pequeño delay antes del rerun
-            time.sleep(0.5)
-            st.rerun()
-        else:
-            st.error(mensaje)
+        with col_btn2:
+            if st.form_submit_button("➕ Sumar 1 (rápido)", use_container_width=True):
+                cantidad = 1
+                enviar = True
+        
+        if enviar and codigo:
+            codigo_limpio = limpiar_codigo(codigo)
+            
+            if not codigo_limpio:
+                st.error("❌ Código vacío")
+                return
+            
+            # Buscar producto
+            fila = stock_df[stock_df["codigo"].astype(str) == str(codigo_limpio)]
+            
+            if fila.empty:
+                st.error("❌ Producto no encontrado")
+                
+                # Opción para registrar como nuevo producto
+                with st.expander("➕ Registrar como nuevo producto", expanded=True):
+                    with st.form("form_nuevo_producto"):
+                        nuevo_producto = st.text_input("Nombre del producto *", key="nuevo_nombre_form")
+                        nuevo_area = st.selectbox(
+                            "Área *",
+                            ["Farmacia", "Cajas", "Pasillos", "Equipos médicos", "Bodega", "Otros"],
+                            key="nuevo_area_form"
+                        )
+                        nuevo_stock = st.number_input("Stock inicial *", min_value=0, value=0, step=1, key="nuevo_stock_form")
+                        
+                        if st.form_submit_button("📝 Registrar y comenzar conteo"):
+                            nuevo = pd.DataFrame([[
+                                codigo_limpio,
+                                nuevo_producto,
+                                nuevo_area,
+                                nuevo_stock
+                            ]], columns=["codigo", "producto", "area", "stock_sistema"])
+                            
+                            stock_df_actualizado = pd.concat([stock_df, nuevo], ignore_index=True)
+                            guardar_stock(stock_df_actualizado)
+                            
+                            st.session_state.producto_actual_conteo = {
+                                'codigo': codigo_limpio,
+                                'nombre': nuevo_producto,
+                                'area': nuevo_area,
+                                'stock_sistema': nuevo_stock
+                            }
+                            st.session_state.conteo_actual_session = 0
+                            
+                            st.success(f"✅ Producto '{nuevo_producto}' registrado")
+                            st.rerun()
+                
+                return
+            
+            producto = fila.iloc[0]["producto"]
+            area = fila.iloc[0]["area"]
+            stock_sistema = int(fila.iloc[0]["stock_sistema"])
+            
+            # Calcular total acumulado hasta ahora (hoy)
+            hoy = datetime.now().strftime("%Y-%m-%d")
+            escaneos_hoy = escaneos_df[
+                (escaneos_df["codigo"] == codigo_limpio) &
+                (escaneos_df["usuario"] == st.session_state.nombre)
+            ]
+            if not escaneos_hoy.empty:
+                escaneos_hoy['timestamp'] = pd.to_datetime(escaneos_hoy['timestamp'])
+                escaneos_hoy = escaneos_hoy[escaneos_hoy['timestamp'].dt.strftime('%Y-%m-%d') == hoy]
+            
+            # Calcular nuevo total acumulado
+            total_anterior = escaneos_hoy["cantidad_escaneada"].sum() if not escaneos_hoy.empty else 0
+            nuevo_total_acumulado = total_anterior + cantidad
+            
+            # Crear datos del escaneo para guardar PERMANENTEMENTE
+            timestamp_actual = datetime.now()
+            
+            escaneo_data = {
+                "timestamp": timestamp_actual,
+                "usuario": st.session_state.nombre,
+                "codigo": codigo_limpio,
+                "producto": producto,
+                "area": area,
+                "cantidad_escaneada": cantidad,
+                "total_acumulado": nuevo_total_acumulado,
+                "stock_sistema": stock_sistema,
+                "tipo_operacion": "ESCANEO"
+            }
+            
+            # GUARDAR PERMANENTEMENTE el escaneo individual
+            exito_guardado, mensaje_guardado = guardar_escaneo_detallado(escaneo_data)
+            
+            if not exito_guardado:
+                st.error(f"Error al guardar: {mensaje_guardado}")
+                return
+            
+            # Actualizar el resumen diario de conteos
+            actualizar_resumen_conteo(
+                st.session_state.nombre, 
+                codigo_limpio, 
+                producto, 
+                area, 
+                stock_sistema, 
+                nuevo_total_acumulado
+            )
+            
+            # Actualizar variables de sesión
+            st.session_state.producto_actual_conteo = {
+                'codigo': codigo_limpio,
+                'nombre': producto,
+                'area': area,
+                'stock_sistema': stock_sistema
+            }
+            st.session_state.conteo_actual_session = nuevo_total_acumulado
+            st.session_state.total_escaneos_session += 1
+            
+            st.success(f"✅ {producto[:20]}... +{cantidad} = {nuevo_total_acumulado}")
+            
+            if not st.session_state.modo_escaneo_continuo:
+                st.rerun()
     
     # Controles para el producto actual
     if st.session_state.producto_actual_conteo:
         producto_info = st.session_state.producto_actual_conteo
         
         st.markdown("---")
-        st.subheader("🎯 Controles rápidos")
+        st.subheader("🎯 Controles rápidos para producto actual")
         
-        col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
         
         with col_btn1:
             if st.button("➕ Sumar 1", use_container_width=True, type="primary"):
-                exito, mensaje = procesar_escaneo_permanente(producto_info['codigo'], cantidad=1)
-                if exito:
-                    st.success(mensaje)
-                    st.rerun()
+                # Procesar escaneo rápido
+                codigo_limpio = producto_info['codigo']
+                producto = producto_info['nombre']
+                area = producto_info['area']
+                stock_sistema = producto_info['stock_sistema']
+                cantidad = 1
+                
+                # Calcular nuevo total
+                hoy = datetime.now().strftime("%Y-%m-%d")
+                escaneos_hoy = escaneos_df[
+                    (escaneos_df["codigo"] == codigo_limpio) &
+                    (escaneos_df["usuario"] == st.session_state.nombre)
+                ]
+                if not escaneos_hoy.empty:
+                    escaneos_hoy['timestamp'] = pd.to_datetime(escaneos_hoy['timestamp'])
+                    escaneos_hoy = escaneos_hoy[escaneos_hoy['timestamp'].dt.strftime('%Y-%m-%d') == hoy]
+                
+                total_anterior = escaneos_hoy["cantidad_escaneada"].sum() if not escaneos_hoy.empty else 0
+                nuevo_total_acumulado = total_anterior + cantidad
+                
+                # Guardar escaneo
+                escaneo_data = {
+                    "timestamp": datetime.now(),
+                    "usuario": st.session_state.nombre,
+                    "codigo": codigo_limpio,
+                    "producto": producto,
+                    "area": area,
+                    "cantidad_escaneada": cantidad,
+                    "total_acumulado": nuevo_total_acumulado,
+                    "stock_sistema": stock_sistema,
+                    "tipo_operacion": "ESCANEO_RAPIDO"
+                }
+                
+                guardar_escaneo_detallado(escaneo_data)
+                actualizar_resumen_conteo(
+                    st.session_state.nombre, 
+                    codigo_limpio, 
+                    producto, 
+                    area, 
+                    stock_sistema, 
+                    nuevo_total_acumulado
+                )
+                
+                st.session_state.conteo_actual_session = nuevo_total_acumulado
+                st.session_state.total_escaneos_session += 1
+                
+                st.success(f"✅ {producto[:20]}... +1 = {nuevo_total_acumulado}")
+                st.rerun()
         
         with col_btn2:
             if st.button("➕ Sumar 5", use_container_width=True):
-                exito, mensaje = procesar_escaneo_permanente(producto_info['codigo'], cantidad=5)
-                if exito:
-                    st.success(mensaje)
-                    st.rerun()
+                # Similar a Sumar 1 pero con cantidad 5
+                st.success("Funcionalidad de Sumar 5 - usa el formulario principal")
         
         with col_btn3:
-            if st.button("➕ Sumar 10", use_container_width=True):
-                exito, mensaje = procesar_escaneo_permanente(producto_info['codigo'], cantidad=10)
-                if exito:
-                    st.success(mensaje)
-                    st.rerun()
-        
-        with col_btn4:
-            cantidad_personalizada = st.number_input(
-                "Cantidad personalizada",
-                min_value=1,
-                value=1,
-                step=1,
-                key="cantidad_personalizada"
-            )
-            if st.button(f"➕ Sumar {cantidad_personalizada}", use_container_width=True):
-                exito, mensaje = procesar_escaneo_permanente(producto_info['codigo'], cantidad=cantidad_personalizada)
-                if exito:
-                    st.success(mensaje)
-                    st.rerun()
-        
-        # Botón para cambiar de producto
-        st.markdown("---")
-        if st.button("🔄 Cambiar producto", use_container_width=True):
-            st.session_state.producto_actual_conteo = None
-            st.session_state.conteo_actual_session = 0
-            st.session_state.codigo_input_value = ""
-            st.rerun()
-    
-    # Sección para búsqueda manual si no se encuentra producto
-    elif codigo and codigo.strip() and not st.session_state.producto_actual_conteo:
-        # Buscar producto
-        fila = stock_df[stock_df["codigo"].astype(str) == str(codigo)]
-        
-        if fila.empty:
-            st.error("❌ Producto no encontrado en el sistema")
-            
-            with st.expander("➕ Registrar como nuevo producto", expanded=True):
-                with st.form("form_nuevo_producto_conteo"):
-                    nuevo_producto = st.text_input("Nombre del producto *", key="nuevo_nombre")
-                    nuevo_area = st.selectbox(
-                        "Área *",
-                        ["Farmacia", "Cajas", "Pasillos", "Equipos médicos", "Bodega", "Otros"],
-                        key="nuevo_area"
-                    )
-                    nuevo_stock = st.number_input("Stock inicial *", min_value=0, value=0, step=1, key="nuevo_stock")
-                    
-                    if st.form_submit_button("📝 Registrar y comenzar conteo"):
-                        nuevo = pd.DataFrame([[
-                            codigo,
-                            nuevo_producto,
-                            nuevo_area,
-                            nuevo_stock
-                        ]], columns=["codigo", "producto", "area", "stock_sistema"])
-                        
-                        stock_df_actualizado = pd.concat([stock_df, nuevo], ignore_index=True)
-                        guardar_stock(stock_df_actualizado)
-                        
-                        st.session_state.producto_actual_conteo = {
-                            'codigo': codigo,
-                            'nombre': nuevo_producto,
-                            'area': nuevo_area,
-                            'stock_sistema': nuevo_stock
-                        }
-                        st.session_state.conteo_actual_session = 0
-                        st.session_state.codigo_input_value = ""
-                        
-                        st.success(f"✅ Producto '{nuevo_producto}' registrado")
-                        st.rerun()
-        else:
-            producto = fila.iloc[0]["producto"]
-            area = fila.iloc[0]["area"]
-            stock_sistema = int(fila.iloc[0]["stock_sistema"])
-            
-            st.success(f"✅ Producto encontrado: **{producto}**")
-            
-            col_select1, col_select2 = st.columns(2)
-            
-            with col_select1:
-                if st.button(f"🎯 Seleccionar para conteo", type="primary", use_container_width=True):
-                    st.session_state.producto_actual_conteo = {
-                        'codigo': codigo,
-                        'nombre': producto,
-                        'area': area,
-                        'stock_sistema': stock_sistema
-                    }
-                    st.session_state.conteo_actual_session = 0
-                    st.session_state.codigo_input_value = ""
-                    st.rerun()
-            
-            with col_select2:
-                if st.button("📋 Ver historial detallado", use_container_width=True):
-                    historial = escaneos_df[
-                        (escaneos_df["codigo"] == codigo) &
-                        (escaneos_df["usuario"] == st.session_state.nombre)
-                    ].tail(10)
-                    
-                    if not historial.empty:
-                        historial_display = historial.copy()
-                        historial_display["timestamp"] = pd.to_datetime(historial_display["timestamp"]).dt.strftime("%H:%M:%S")
-                        st.dataframe(
-                            historial_display[["timestamp", "cantidad_escaneada", "total_acumulado"]],
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                        st.metric("Total escaneos producto", len(historial))
-                    else:
-                        st.info("No hay historial de escaneos para este producto")
+            if st.button("🔄 Cambiar producto", use_container_width=True):
+                st.session_state.producto_actual_conteo = None
+                st.session_state.conteo_actual_session = 0
+                st.rerun()
     
     # Historial de escaneos en tiempo real
     st.markdown("---")
-    st.subheader("📱 Escaneos en tiempo real")
+    st.subheader("📱 Últimos escaneos")
     
     if hasattr(st.session_state, 'historial_escaneos') and st.session_state.historial_escaneos:
-        ultimos_escaneos = st.session_state.historial_escaneos[-10:]
+        ultimos_escaneos = st.session_state.historial_escaneos[-5:]
         if ultimos_escaneos:
             df_ultimos = pd.DataFrame(ultimos_escaneos)
             df_ultimos["timestamp"] = pd.to_datetime(df_ultimos["timestamp"]).dt.strftime("%H:%M:%S")
             
-            col_esc1, col_esc2 = st.columns([3, 1])
-            
-            with col_esc1:
-                st.dataframe(
-                    df_ultimos[["timestamp", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
-                    use_container_width=True,
-                    hide_index=True,
-                    height=300
-                )
-            
-            with col_esc2:
-                st.metric("Escaneos sesión", len(st.session_state.historial_escaneos))
-                total_cantidad = sum(e.get("cantidad_escaneada", 0) for e in st.session_state.historial_escaneos)
-                st.metric("Total unidades", total_cantidad)
+            st.dataframe(
+                df_ultimos[["timestamp", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
+                use_container_width=True,
+                hide_index=True
+            )
     
     # Estadísticas de esta sesión
     st.markdown("---")
-    st.subheader("📊 Estadísticas de esta sesión")
+    st.subheader("📊 Estadísticas de hoy")
     
-    col_ses1, col_ses2, col_ses3, col_ses4 = st.columns(4)
+    hoy = datetime.now().strftime("%Y-%m-%d")
+    mis_escaneos_hoy = escaneos_df[
+        (escaneos_df["usuario"] == st.session_state.nombre)
+    ]
+    if not mis_escaneos_hoy.empty:
+        mis_escaneos_hoy['timestamp'] = pd.to_datetime(mis_escaneos_hoy['timestamp'])
+        mis_escaneos_hoy = mis_escaneos_hoy[mis_escaneos_hoy['timestamp'].dt.strftime('%Y-%m-%d') == hoy]
+    
+    col_ses1, col_ses2, col_ses3 = st.columns(3)
     
     with col_ses1:
-        st.metric("Escaneos hoy", st.session_state.total_escaneos_session)
-    
-    with col_ses2:
-        hoy = datetime.now().strftime("%Y-%m-%d")
-        mis_escaneos_hoy = escaneos_df[
-            (escaneos_df["usuario"] == st.session_state.nombre)
-        ]
         if not mis_escaneos_hoy.empty:
-            mis_escaneos_hoy['timestamp'] = pd.to_datetime(mis_escaneos_hoy['timestamp'])
-            mis_escaneos_hoy = mis_escaneos_hoy[mis_escaneos_hoy['timestamp'].dt.strftime('%Y-%m-%d') == hoy]
-            st.metric("Productos hoy", mis_escaneos_hoy["codigo"].nunique() if not mis_escaneos_hoy.empty else 0)
+            st.metric("Productos hoy", mis_escaneos_hoy["codigo"].nunique())
         else:
             st.metric("Productos hoy", 0)
     
-    with col_ses3:
+    with col_ses2:
         if not mis_escaneos_hoy.empty:
             total_unidades = mis_escaneos_hoy["cantidad_escaneada"].sum()
             st.metric("Unidades hoy", total_unidades)
         else:
             st.metric("Unidades hoy", 0)
     
-    with col_ses4:
+    with col_ses3:
         mis_conteos_hoy = conteos_df[
             (conteos_df["usuario"] == st.session_state.nombre) &
             (conteos_df["fecha"].str.startswith(hoy))
@@ -1008,42 +925,6 @@ def mostrar_conteo_fisico():
             st.metric("Precisión hoy", f"{(exactos/len(mis_conteos_hoy)*100):.1f}%" if len(mis_conteos_hoy) > 0 else "0%")
         else:
             st.metric("Precisión hoy", "0%")
-    
-    # Botón para exportar historial completo
-    st.markdown("---")
-    if st.button("💾 Exportar historial completo de hoy", use_container_width=True):
-        hoy = datetime.now().strftime("%Y-%m-%d")
-        mis_escaneos_hoy = escaneos_df[
-            (escaneos_df["usuario"] == st.session_state.nombre)
-        ]
-        if not mis_escaneos_hoy.empty:
-            mis_escaneos_hoy['timestamp'] = pd.to_datetime(mis_escaneos_hoy['timestamp'])
-            mis_escaneos_hoy = mis_escaneos_hoy[mis_escaneos_hoy['timestamp'].dt.strftime('%Y-%m-%d') == hoy]
-        
-        if not mis_escaneos_hoy.empty:
-            csv = mis_escaneos_hoy.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="⬇️ Descargar CSV completo",
-                data=csv,
-                file_name=f"historial_completo_{hoy}_{st.session_state.usuario}.csv",
-                mime="text/csv"
-            )
-        else:
-            st.warning("No hay escaneos para exportar hoy")
-    
-    # JavaScript para modo continuo
-    if st.session_state.modo_escaneo_continuo:
-        st.markdown("""
-        <script>
-        // Enfocar automáticamente el campo de entrada en modo continuo
-        setTimeout(function() {
-            const inputs = document.querySelectorAll('input[data-testid="stTextInput"]');
-            if (inputs.length > 0) {
-                inputs[0].focus();
-            }
-        }, 100);
-        </script>
-        """, unsafe_allow_html=True)
 
 # ======================================================
 # 5️⃣ PÁGINA: REPORTES MEJORADOS
@@ -1056,119 +937,55 @@ def mostrar_reportes():
     conteos_df = cargar_conteos()
     escaneos_df = cargar_escaneos_detallados()
     
-    tipo_reporte = st.radio(
-        "Seleccionar tipo de reporte:",
-        ["📈 Resumen de conteos", "📱 Historial detallado", "👤 Reporte por usuario"],
-        horizontal=True
-    )
+    st.subheader("📈 Resumen de conteos")
     
-    if tipo_reporte == "📈 Resumen de conteos":
-        if conteos_df.empty:
-            st.info("📭 No hay conteos registrados")
-        else:
-            st.subheader("📈 Estadísticas del reporte")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total registros", len(conteos_df))
-            
-            with col2:
-                diferencias_criticas = len(conteos_df[abs(conteos_df["diferencia"]) > 2])
-                st.metric("Diferencias críticas", diferencias_criticas)
-            
-            with col3:
-                diferencias_leves = len(conteos_df[(abs(conteos_df["diferencia"]) <= 2) & 
-                                                  (conteos_df["diferencia"] != 0)])
-                st.metric("Diferencias leves", diferencias_leves)
-            
-            with col4:
-                conteos_exactos = len(conteos_df[conteos_df["diferencia"] == 0])
-                st.metric("Conteos exactos", conteos_exactos)
-            
-            st.markdown("---")
-            
-            st.subheader("📋 Detalle de conteos")
-            
-            conteos_df_display = conteos_df.copy()
-            conteos_df_display.insert(0, '#', range(1, len(conteos_df_display) + 1))
-            
-            st.dataframe(conteos_df_display, use_container_width=True)
+    if conteos_df.empty:
+        st.info("📭 No hay conteos registrados")
+    else:
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total registros", len(conteos_df))
+        
+        with col2:
+            diferencias_criticas = len(conteos_df[abs(conteos_df["diferencia"]) > 2])
+            st.metric("Diferencias críticas", diferencias_criticas)
+        
+        with col3:
+            diferencias_leves = len(conteos_df[(abs(conteos_df["diferencia"]) <= 2) & 
+                                              (conteos_df["diferencia"] != 0)])
+            st.metric("Diferencias leves", diferencias_leves)
+        
+        with col4:
+            conteos_exactos = len(conteos_df[conteos_df["diferencia"] == 0])
+            st.metric("Conteos exactos", conteos_exactos)
+        
+        st.markdown("---")
+        
+        st.subheader("📋 Detalle de conteos")
+        
+        conteos_df_display = conteos_df.copy()
+        conteos_df_display.insert(0, '#', range(1, len(conteos_df_display) + 1))
+        
+        st.dataframe(conteos_df_display, use_container_width=True)
     
-    elif tipo_reporte == "📱 Historial detallado":
-        if escaneos_df.empty:
-            st.info("📭 No hay escaneos registrados")
-        else:
-            st.subheader("📱 Historial completo de escaneos")
-            
-            col_filt1, col_filt2, col_filt3 = st.columns(3)
-            
-            with col_filt1:
-                fecha_inicio = st.date_input("Fecha inicio", value=pd.to_datetime('today') - pd.Timedelta(days=7))
-            
-            with col_filt2:
-                fecha_fin = st.date_input("Fecha fin", value=pd.to_datetime('today'))
-            
-            with col_filt3:
-                usuario_filtro = st.selectbox(
-                    "Usuario",
-                    ["Todos"] + sorted(escaneos_df["usuario"].unique().tolist())
-                )
-            
-            escaneos_filtrados = escaneos_df.copy()
-            escaneos_filtrados['timestamp'] = pd.to_datetime(escaneos_filtrados['timestamp'])
-            
-            escaneos_filtrados = escaneos_filtrados[
-                (escaneos_filtrados['timestamp'].dt.date >= fecha_inicio) &
-                (escaneos_filtrados['timestamp'].dt.date <= fecha_fin)
-            ]
-            
-            if usuario_filtro != "Todos":
-                escaneos_filtrados = escaneos_filtrados[escaneos_filtrados["usuario"] == usuario_filtro]
-            
-            if escaneos_filtrados.empty:
-                st.info("No hay escaneos en el período seleccionado")
-            else:
-                total_escaneos = len(escaneos_filtrados)
-                total_unidades = escaneos_filtrados["cantidad_escaneada"].sum()
-                productos_unicos = escaneos_filtrados["codigo"].nunique()
-                
-                col_stat1, col_stat2, col_stat3 = st.columns(3)
-                with col_stat1:
-                    st.metric("Total escaneos", total_escaneos)
-                with col_stat2:
-                    st.metric("Total unidades", total_unidades)
-                with col_stat3:
-                    st.metric("Productos únicos", productos_unicos)
-                
-                escaneos_display = escaneos_filtrados.copy()
-                escaneos_display["timestamp"] = escaneos_display["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
-                
-                st.dataframe(
-                    escaneos_display[["timestamp", "usuario", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
-                    use_container_width=True,
-                    height=400
-                )
+    st.markdown("---")
+    st.subheader("📱 Historial de escaneos")
     
-    elif tipo_reporte == "👤 Reporte por usuario":
-        if escaneos_df.empty:
-            st.info("📭 No hay escaneos registrados")
-        else:
-            st.subheader("👤 Estadísticas por usuario")
-            
-            stats_por_usuario = escaneos_df.groupby("usuario").agg(
-                total_escaneos=('cantidad_escaneada', 'count'),
-                total_unidades=('cantidad_escaneada', 'sum'),
-                productos_unicos=('codigo', 'nunique'),
-                primera_fecha=('timestamp', 'min'),
-                ultima_fecha=('timestamp', 'max')
-            ).reset_index()
-            
-            stats_por_usuario["primera_fecha"] = pd.to_datetime(stats_por_usuario["primera_fecha"]).dt.strftime("%Y-%m-%d")
-            stats_por_usuario["ultima_fecha"] = pd.to_datetime(stats_por_usuario["ultima_fecha"]).dt.strftime("%Y-%m-%d")
-            
-            st.dataframe(stats_por_usuario, use_container_width=True)
+    if escaneos_df.empty:
+        st.info("📭 No hay escaneos registrados")
+    else:
+        # Mostrar últimos 20 escaneos
+        escaneos_display = escaneos_df.tail(20).copy()
+        escaneos_display["timestamp"] = pd.to_datetime(escaneos_display["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+        st.dataframe(
+            escaneos_display[["timestamp", "usuario", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
+            use_container_width=True,
+            height=400
+        )
     
+    # Exportar datos
     st.markdown("---")
     st.subheader("💾 Exportar datos")
     
@@ -1191,30 +1008,6 @@ def mostrar_reportes():
                 file_name=f"historial_completo_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv"
             )
-    
-    if tiene_permiso("inventario"):
-        st.markdown("---")
-        st.subheader("⚙️ Administración")
-        
-        with st.expander("🗑️ Eliminar registro de conteo", expanded=False):
-            if not conteos_df.empty:
-                registro_a_eliminar = st.number_input(
-                    "Número de registro a eliminar",
-                    min_value=1,
-                    max_value=len(conteos_df),
-                    step=1
-                )
-                
-                if st.button("❌ Eliminar registro", type="secondary"):
-                    registro_idx = registro_a_eliminar - 1
-                    exito, mensaje = eliminar_registro_conteo(registro_idx)
-                    if exito:
-                        st.success(mensaje)
-                        st.rerun()
-                    else:
-                        st.error(mensaje)
-            else:
-                st.info("No hay registros para eliminar")
 
 # ======================================================
 # 6️⃣ PÁGINA: GESTIÓN DE USUARIOS (SOLO ADMIN)
@@ -1325,19 +1118,6 @@ def mostrar_configuracion():
     
     st.markdown("---")
     
-    st.subheader("🛠️ Mantenimiento")
-    
-    col_mant1, col_mant2 = st.columns(2)
-    
-    with col_mant1:
-        if st.button("🔄 Recalcular estadísticas", use_container_width=True):
-            st.info("Función en desarrollo")
-    
-    with col_mant2:
-        if st.button("🧹 Limpiar caché", use_container_width=True):
-            st.info("Función en desarrollo")
-    
-    st.markdown("---")
     st.subheader("💾 Backup del sistema")
     
     if st.button("📁 Crear backup completo", use_container_width=True):
