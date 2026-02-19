@@ -901,7 +901,7 @@ def mostrar_conteo_fisico():
                         st.error(f"Error al cargar historial: {e}")
 
 # ======================================================
-# 5️⃣ PÁGINA: REPORTES - VERSIÓN MEJORADA (RESUMEN CLARO)
+# 5️⃣ PÁGINA: REPORTES - VERSIÓN SIN RESUMEN POR ÁREA
 # ======================================================
 def mostrar_reportes():
     """Mostrar página de reportes con resumen claro y útil"""
@@ -1024,7 +1024,7 @@ def mostrar_reportes():
     st.markdown("---")
     
     # ==============================================
-    # SECCIÓN 3: RESUMEN POR PRODUCTO
+    # SECCIÓN 3: DETALLE POR PRODUCTO
     # ==============================================
     st.subheader("📋 Detalle por Producto")
     
@@ -1112,29 +1112,7 @@ def mostrar_reportes():
     st.markdown("---")
     
     # ==============================================
-    # SECCIÓN 4: RESUMEN POR ÁREA
-    # ==============================================
-    st.subheader("🏷️ Resumen por Área")
-    
-    if not escaneos_df.empty:
-        # Resumen por área
-        resumen_area = escaneos_df.groupby('area').agg({
-            'codigo': 'nunique',
-            'cantidad_escaneada': 'sum',
-            'stock_sistema': 'sum',
-            'usuario': 'nunique'
-        }).reset_index()
-        
-        resumen_area.columns = ['Área', 'Productos', 'Unidades contadas', 'Stock sistema', 'Usuarios']
-        resumen_area['Diferencia'] = resumen_area['Unidades contadas'] - resumen_area['Stock sistema']
-        
-        # Mostrar tabla por área
-        st.dataframe(resumen_area, use_container_width=True, hide_index=True)
-    
-    st.markdown("---")
-    
-    # ==============================================
-    # SECCIÓN 5: EXPORTAR DATOS
+    # SECCIÓN 4: EXPORTAR DATOS
     # ==============================================
     st.subheader("💾 Exportar datos")
     
