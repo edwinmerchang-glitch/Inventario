@@ -656,7 +656,7 @@ def mostrar_conteo_fisico():
         return None
 
     # --- FUNCIÓN PARA CALCULAR TOTAL (CORREGIDA) ---
-    def total_escaneado_hoy(usuario, codigo):
+def total_escaneado_hoy(usuario, codigo):
     if not os.path.exists(ARCHIVO_ESCANEOS):
         return 0
 
@@ -685,6 +685,7 @@ def mostrar_conteo_fisico():
     except Exception as e:
         st.error(f"Error sumando escaneos: {e}")
         return 0
+
 
             
             # Verificar que existe la columna cantidad_escaneada
