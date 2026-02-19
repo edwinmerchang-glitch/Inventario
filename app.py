@@ -657,14 +657,35 @@ def mostrar_conteo_fisico():
 
     # --- FUNCIÓN PARA CALCULAR TOTAL (CORREGIDA) ---
     def total_escaneado_hoy(usuario, codigo):
-        """Calcula el total escaneado hoy"""
-        if not os.path.exists(ARCHIVO_ESCANEOS):
+    if not os.path.exists(ARCHIVO_ESCANEOS):
+        return 0
+
+    try:
+        df = pd.read_csv(ARCHIVO_ESCANEOS)
+
+        if df.empty:
             return 0
-        
-        try:
-            df = pd.read_csv(ARCHIVO_ESCANEOS)
-            if df.empty:
-                return 0
+
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+        df['fecha'] = df['timestamp'].dt.date.astype(str)
+
+        hoy = datetime.now().strftime('%Y-%m-%d')
+
+        df = df[
+            (df['fecha'] == hoy) &
+            (df['usuario'] == usuario) &
+            (df['codigo'].astype(str) == str(codigo))
+        ]
+
+        if df.empty:
+            return 0
+
+        return int(df['cantidad_escaneada'].sum())
+
+    except Exception as e:
+        st.error(f"Error sumando escaneos: {e}")
+        return 0
+
             
             # Verificar que existe la columna cantidad_escaneada
             if 'cantidad_escaneada' not in df.columns:
