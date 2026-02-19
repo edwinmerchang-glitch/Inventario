@@ -901,167 +901,283 @@ def mostrar_conteo_fisico():
                         st.error(f"Error al cargar historial: {e}")
 
 # ======================================================
-# 5️⃣ PÁGINA: REPORTES - VERSIÓN CORREGIDA (RESUMEN)
+# 5️⃣ PÁGINA: REPORTES - VERSIÓN MEJORADA (RESUMEN CLARO)
 # ======================================================
 def mostrar_reportes():
-    """Mostrar página de reportes con resumen por producto"""
+    """Mostrar página de reportes con resumen claro y útil"""
     st.title("📊 Reportes de Conteo")
     st.markdown("---")
     
     conteos_df = cargar_conteos()
     escaneos_df = cargar_escaneos_detallados()
     
-    st.subheader("📈 Resumen de conteos")
-    
-    if conteos_df.empty:
-        st.info("📭 No hay conteos registrados")
-    else:
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total registros", len(conteos_df))
-        
-        with col2:
-            diferencias_criticas = len(conteos_df[abs(conteos_df["diferencia"]) > 2])
-            st.metric("Diferencias críticas", diferencias_criticas)
-        
-        with col3:
-            diferencias_leves = len(conteos_df[(abs(conteos_df["diferencia"]) <= 2) & 
-                                              (conteos_df["diferencia"] != 0)])
-            st.metric("Diferencias leves", diferencias_leves)
-        
-        with col4:
-            conteos_exactos = len(conteos_df[conteos_df["diferencia"] == 0])
-            st.metric("Conteos exactos", conteos_exactos)
-        
-        st.markdown("---")
-        
-        st.subheader("📋 Resumen de conteos por producto")
-        
-        # Crear resumen agrupado por producto
-        if not escaneos_df.empty:
-            # Asegurar tipos de datos
-            escaneos_df['cantidad_escaneada'] = pd.to_numeric(escaneos_df['cantidad_escaneada'], errors='coerce').fillna(0)
-            escaneos_df['stock_sistema'] = pd.to_numeric(escaneos_df['stock_sistema'], errors='coerce').fillna(0)
-            
-            # Agrupar por producto para obtener totales
-            resumen_productos = escaneos_df.groupby(['codigo', 'producto', 'area', 'stock_sistema']).agg({
-                'cantidad_escaneada': 'sum',
-                'usuario': 'first',  # Tomar el primer usuario que escaneó
-                'timestamp': 'max'    # Tomar la última fecha de escaneo
-            }).reset_index()
-            
-            # Renombrar columnas
-            resumen_productos.columns = ['codigo', 'producto', 'area', 'stock_sistema', 
-                                        'total_contado', 'usuario', 'ultimo_escaneo']
-            
-            # Calcular diferencia
-            resumen_productos['diferencia'] = resumen_productos['total_contado'] - resumen_productos['stock_sistema']
-            
-            # Formatear fecha
-            resumen_productos['ultimo_escaneo'] = pd.to_datetime(resumen_productos['ultimo_escaneo']).dt.strftime('%Y-%m-%d %H:%M')
-            
-            # Agregar columna de índice
-            resumen_productos.insert(0, '#', range(1, len(resumen_productos) + 1))
-            
-            # Mostrar resumen
-            st.dataframe(
-                resumen_productos[['#', 'codigo', 'producto', 'area', 'stock_sistema', 
-                                  'total_contado', 'diferencia', 'usuario', 'ultimo_escaneo']],
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Métricas adicionales del resumen
-            col_m1, col_m2, col_m3 = st.columns(3)
-            with col_m1:
-                st.metric("Productos contados", len(resumen_productos))
-            with col_m2:
-                total_escaneos = int(resumen_productos['total_contado'].sum())
-                st.metric("Total unidades contadas", total_escaneos)
-            with col_m3:
-                productos_con_diferencia = len(resumen_productos[resumen_productos['diferencia'] != 0])
-                st.metric("Productos con diferencia", productos_con_diferencia)
-        else:
-            st.info("📭 No hay escaneos registrados para mostrar resumen")
-    
-    st.markdown("---")
-    st.subheader("📱 Historial detallado de escaneos")
+    # ==============================================
+    # SECCIÓN 1: MÉTRICAS PRINCIPALES
+    # ==============================================
+    st.subheader("📈 Métricas Principales")
     
     if escaneos_df.empty:
         st.info("📭 No hay escaneos registrados")
     else:
-        # Opción para ver detalle o resumen
-        ver_detalle = st.checkbox("Ver historial detallado", value=False)
+        # Calcular métricas de escaneos
+        total_escaneos = len(escaneos_df)
+        productos_contados = escaneos_df['codigo'].nunique()
+        total_unidades = escaneos_df['cantidad_escaneada'].sum()
+        usuarios_activos = escaneos_df['usuario'].nunique()
         
-        if ver_detalle:
-            # Mostrar últimos 50 escaneos en detalle
-            escaneos_display = escaneos_df.tail(50).copy()
-            escaneos_display["timestamp"] = pd.to_datetime(escaneos_display["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
-            
-            st.dataframe(
-                escaneos_display[["timestamp", "usuario", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
-                use_container_width=True,
-                height=400
-            )
-            st.caption(f"Mostrando últimos {min(50, len(escaneos_df))} escaneos")
-        else:
-            # Mostrar resumen por día
-            escaneos_df['fecha'] = pd.to_datetime(escaneos_df['timestamp']).dt.strftime('%Y-%m-%d')
-            resumen_diario = escaneos_df.groupby(['fecha', 'usuario']).agg({
-                'cantidad_escaneada': 'sum',
-                'codigo': 'nunique'
-            }).reset_index()
-            resumen_diario.columns = ['fecha', 'usuario', 'total_unidades', 'productos_distintos']
-            
-            st.dataframe(
-                resumen_diario.sort_values('fecha', ascending=False),
-                use_container_width=True,
-                hide_index=True
-            )
+        # Mostrar en 4 columnas
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        
+        with col_m1:
+            st.metric("📦 Productos contados", productos_contados, 
+                     help="Número de productos diferentes que han sido escaneados")
+        
+        with col_m2:
+            st.metric("🔢 Total escaneos", total_escaneos,
+                     help="Número total de veces que se ha escaneado (incluye múltiples escaneos del mismo producto)")
+        
+        with col_m3:
+            st.metric("📦 Unidades contadas", total_unidades,
+                     help="Suma total de todas las cantidades escaneadas")
+        
+        with col_m4:
+            st.metric("👥 Usuarios activos", usuarios_activos,
+                     help="Número de usuarios que han realizado escaneos")
     
-    # Exportar datos
     st.markdown("---")
+    
+    # ==============================================
+    # SECCIÓN 2: ANÁLISIS DE PRECISIÓN
+    # ==============================================
+    st.subheader("🎯 Análisis de Precisión")
+    
+    if not conteos_df.empty and not escaneos_df.empty:
+        # Crear resumen por producto para análisis de precisión
+        resumen_precision = escaneos_df.groupby(['codigo', 'producto', 'area', 'stock_sistema']).agg({
+            'cantidad_escaneada': 'sum'
+        }).reset_index()
+        
+        resumen_precision.columns = ['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico']
+        resumen_precision['diferencia'] = resumen_precision['conteo_fisico'] - resumen_precision['stock_sistema']
+        resumen_precision['estado'] = resumen_precision['diferencia'].apply(
+            lambda x: '✅ Exacto' if x == 0 else ('⚠️ Sobrante' if x > 0 else '🔻 Faltante')
+        )
+        
+        # Calcular estadísticas de precisión
+        total_productos = len(resumen_precision)
+        exactos = len(resumen_precision[resumen_precision['diferencia'] == 0])
+        sobrantes = len(resumen_precision[resumen_precision['diferencia'] > 0])
+        faltantes = len(resumen_precision[resumen_precision['diferencia'] < 0])
+        
+        # Mostrar en 4 columnas con colores
+        col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+        
+        with col_p1:
+            st.metric("✅ Conteos exactos", f"{exactos} de {total_productos}", 
+                     f"{(exactos/total_productos*100):.1f}%",
+                     help="Productos donde el conteo físico coincide con el stock del sistema")
+        
+        with col_p2:
+            st.metric("⚠️ Sobrantes", sobrantes,
+                     help="Productos donde se contó MÁS de lo que indica el sistema")
+        
+        with col_p3:
+            st.metric("🔻 Faltantes", faltantes,
+                     help="Productos donde se contó MENOS de lo que indica el sistema")
+        
+        with col_p4:
+            # Diferencia neta total
+            diferencia_neta = resumen_precision['diferencia'].sum()
+            st.metric("📊 Diferencia neta", f"{diferencia_neta:+,d}",
+                     delta_color="off" if diferencia_neta == 0 else ("normal" if diferencia_neta > 0 else "inverse"),
+                     help="Suma total de todas las diferencias (positivo = sobrante general, negativo = faltante general)")
+        
+        # Mostrar productos con mayores diferencias
+        st.markdown("---")
+        st.subheader("🔍 Productos con mayores diferencias")
+        
+        col_tab1, col_tab2 = st.columns(2)
+        
+        with col_tab1:
+            st.write("**Top 5 sobrantes**")
+            sobrantes_top = resumen_precision[resumen_precision['diferencia'] > 0].nlargest(5, 'diferencia')
+            if not sobrantes_top.empty:
+                sobrantes_top = sobrantes_top[['codigo', 'producto', 'stock_sistema', 'conteo_fisico', 'diferencia']].copy()
+                sobrantes_top.columns = ['Código', 'Producto', 'Stock', 'Contado', 'Sobrante']
+                st.dataframe(sobrantes_top, use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay productos con sobrantes")
+        
+        with col_tab2:
+            st.write("**Top 5 faltantes**")
+            faltantes_top = resumen_precision[resumen_precision['diferencia'] < 0].nsmallest(5, 'diferencia')
+            if not faltantes_top.empty:
+                faltantes_top = faltantes_top[['codigo', 'producto', 'stock_sistema', 'conteo_fisico', 'diferencia']].copy()
+                faltantes_top.columns = ['Código', 'Producto', 'Stock', 'Contado', 'Faltante']
+                st.dataframe(faltantes_top, use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay productos con faltantes")
+    
+    else:
+        st.info("📭 No hay suficientes datos para análisis de precisión")
+    
+    st.markdown("---")
+    
+    # ==============================================
+    # SECCIÓN 3: RESUMEN POR PRODUCTO
+    # ==============================================
+    st.subheader("📋 Detalle por Producto")
+    
+    if not escaneos_df.empty:
+        # Crear resumen agrupado por producto
+        resumen_productos = escaneos_df.groupby(['codigo', 'producto', 'area']).agg({
+            'cantidad_escaneada': 'sum',
+            'stock_sistema': 'first',
+            'usuario': lambda x: ', '.join(x.unique()),  # Lista de usuarios que escanearon
+            'timestamp': ['max', 'count']  # Último escaneo y total de escaneos
+        }).reset_index()
+        
+        # Aplanar columnas multiíndice
+        resumen_productos.columns = ['codigo', 'producto', 'area', 'total_contado', 
+                                    'stock_sistema', 'usuarios', 'ultimo_escaneo', 'veces_escaneado']
+        
+        # Calcular diferencia
+        resumen_productos['diferencia'] = resumen_productos['total_contado'] - resumen_productos['stock_sistema']
+        
+        # Formatear fecha
+        resumen_productos['ultimo_escaneo'] = pd.to_datetime(resumen_productos['ultimo_escaneo']).dt.strftime('%Y-%m-%d %H:%M')
+        
+        # Agregar columna de estado visual
+        resumen_productos['estado'] = resumen_productos['diferencia'].apply(
+            lambda x: '✅' if x == 0 else ('⚠️' if x > 0 else '🔻')
+        )
+        
+        # Agregar columna de índice
+        resumen_productos.insert(0, '#', range(1, len(resumen_productos) + 1))
+        
+        # Filtros
+        col_filt1, col_filt2, col_filt3 = st.columns(3)
+        
+        with col_filt1:
+            estado_filtro = st.selectbox(
+                "Filtrar por estado",
+                ["Todos", "✅ Exactos", "⚠️ Sobrantes", "🔻 Faltantes"]
+            )
+        
+        with col_filt2:
+            area_filtro = st.selectbox(
+                "Filtrar por área",
+                ["Todas"] + sorted(resumen_productos['area'].unique().tolist())
+            )
+        
+        with col_filt3:
+            buscar = st.text_input("🔍 Buscar producto", placeholder="Código o nombre")
+        
+        # Aplicar filtros
+        df_filtrado = resumen_productos.copy()
+        
+        if estado_filtro != "Todos":
+            if estado_filtro == "✅ Exactos":
+                df_filtrado = df_filtrado[df_filtrado['diferencia'] == 0]
+            elif estado_filtro == "⚠️ Sobrantes":
+                df_filtrado = df_filtrado[df_filtrado['diferencia'] > 0]
+            elif estado_filtro == "🔻 Faltantes":
+                df_filtrado = df_filtrado[df_filtrado['diferencia'] < 0]
+        
+        if area_filtro != "Todas":
+            df_filtrado = df_filtrado[df_filtrado['area'] == area_filtro]
+        
+        if buscar:
+            mask = df_filtrado['codigo'].astype(str).str.contains(buscar, case=False, na=False) | \
+                   df_filtrado['producto'].astype(str).str.contains(buscar, case=False, na=False)
+            df_filtrado = df_filtrado[mask]
+        
+        # Mostrar tabla
+        st.dataframe(
+            df_filtrado[['#', 'estado', 'codigo', 'producto', 'area', 'stock_sistema', 
+                        'total_contado', 'diferencia', 'veces_escaneado', 'usuarios', 'ultimo_escaneo']],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                'estado': '📊',
+                'diferencia': st.column_config.NumberColumn(format="%+d")
+            }
+        )
+        
+        st.caption(f"Mostrando {len(df_filtrado)} de {len(resumen_productos)} productos")
+    
+    else:
+        st.info("📭 No hay escaneos registrados para mostrar detalle")
+    
+    st.markdown("---")
+    
+    # ==============================================
+    # SECCIÓN 4: RESUMEN POR ÁREA
+    # ==============================================
+    st.subheader("🏷️ Resumen por Área")
+    
+    if not escaneos_df.empty:
+        # Resumen por área
+        resumen_area = escaneos_df.groupby('area').agg({
+            'codigo': 'nunique',
+            'cantidad_escaneada': 'sum',
+            'stock_sistema': 'sum',
+            'usuario': 'nunique'
+        }).reset_index()
+        
+        resumen_area.columns = ['Área', 'Productos', 'Unidades contadas', 'Stock sistema', 'Usuarios']
+        resumen_area['Diferencia'] = resumen_area['Unidades contadas'] - resumen_area['Stock sistema']
+        
+        # Mostrar tabla por área
+        st.dataframe(resumen_area, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # ==============================================
+    # SECCIÓN 5: EXPORTAR DATOS
+    # ==============================================
     st.subheader("💾 Exportar datos")
     
     col_exp1, col_exp2, col_exp3 = st.columns(3)
     
     with col_exp1:
-        if not conteos_df.empty:
+        if not escaneos_df.empty:
+            # Crear resumen para exportar
+            resumen_export = escaneos_df.groupby(['codigo', 'producto', 'area', 'stock_sistema']).agg({
+                'cantidad_escaneada': 'sum',
+                'usuario': lambda x: ', '.join(x.unique()),
+                'timestamp': 'max'
+            }).reset_index()
+            resumen_export.columns = ['codigo', 'producto', 'area', 'stock_sistema', 
+                                     'total_contado', 'usuarios', 'ultimo_escaneo']
+            resumen_export['diferencia'] = resumen_export['total_contado'] - resumen_export['stock_sistema']
+            
             st.download_button(
-                "⬇️ Descargar resumen CSV",
-                data=conteos_df.to_csv(index=False).encode("utf-8"),
-                file_name=f"resumen_conteos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
+                "📥 Exportar resumen por producto (CSV)",
+                data=resumen_export.to_csv(index=False).encode("utf-8"),
+                file_name=f"resumen_productos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                use_container_width=True
             )
     
     with col_exp2:
         if not escaneos_df.empty:
-            # Crear resumen agrupado para exportar
-            if not escaneos_df.empty:
-                resumen_export = escaneos_df.groupby(['codigo', 'producto', 'area', 'stock_sistema']).agg({
-                    'cantidad_escaneada': 'sum',
-                    'usuario': 'first',
-                    'timestamp': 'max'
-                }).reset_index()
-                resumen_export.columns = ['codigo', 'producto', 'area', 'stock_sistema', 
-                                         'total_contado', 'usuario', 'ultimo_escaneo']
-                resumen_export['diferencia'] = resumen_export['total_contado'] - resumen_export['stock_sistema']
-                
-                st.download_button(
-                    "⬇️ Descargar resumen por producto",
-                    data=resumen_export.to_csv(index=False).encode("utf-8"),
-                    file_name=f"resumen_productos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                    mime="text/csv"
-                )
-    
-    with col_exp3:
-        if not escaneos_df.empty:
             st.download_button(
-                "⬇️ Descargar historial completo",
+                "📥 Exportar historial completo (CSV)",
                 data=escaneos_df.to_csv(index=False).encode("utf-8"),
                 file_name=f"historial_completo_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
+                mime="text/csv",
+                use_container_width=True
+            )
+    
+    with col_exp3:
+        if not conteos_df.empty:
+            st.download_button(
+                "📥 Exportar resumen original (CSV)",
+                data=conteos_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"resumen_conteos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                use_container_width=True
             )
 
 # ======================================================
