@@ -622,10 +622,10 @@ def mostrar_importar_excel():
             st.error(f"❌ Error: {str(e)}")
 
 # ======================================================
-# 4️⃣ PÁGINA: CONTEO FÍSICO - VERSIÓN 100% FUNCIONAL
+# 4️⃣ PÁGINA: CONTEO FÍSICO - VERSIÓN CORREGIDA
 # ======================================================
 def mostrar_conteo_fisico():
-    """Mostrar página de conteo físico - VERSIÓN FUNCIONAL"""
+    """Mostrar página de conteo físico - VERSIÓN CORREGIDA"""
     if not tiene_permiso("inventario"):
         st.error("⛔ No tienes permisos para acceder a esta sección")
         st.info("Solo usuarios con rol 'inventario' o 'admin' pueden realizar conteos")
@@ -640,7 +640,7 @@ def mostrar_conteo_fisico():
     usuario_actual = st.session_state.nombre
     hoy = datetime.now().strftime("%Y-%m-%d")
 
-    # --- FUNCIÓN PARA VER EL CSV (CORREGIDA) ---
+    # --- FUNCIÓN PARA VER EL CSV ---
     def mostrar_contenido_csv():
         if os.path.exists(ARCHIVO_ESCANEOS):
             try:
@@ -656,51 +656,34 @@ def mostrar_conteo_fisico():
         return None
 
     # --- FUNCIÓN PARA CALCULAR TOTAL (CORREGIDA) ---
-def total_escaneado_hoy(usuario, codigo):
-    if not os.path.exists(ARCHIVO_ESCANEOS):
-        return 0
-
-    try:
-        df = pd.read_csv(ARCHIVO_ESCANEOS)
-
-        if df.empty:
+    def total_escaneado_hoy(usuario, codigo):
+        """Calcula el total escaneado hoy por un usuario para un código específico"""
+        if not os.path.exists(ARCHIVO_ESCANEOS):
             return 0
 
-        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-        df['fecha'] = df['timestamp'].dt.date.astype(str)
+        try:
+            df = pd.read_csv(ARCHIVO_ESCANEOS)
 
-        hoy = datetime.now().strftime('%Y-%m-%d')
+            if df.empty:
+                return 0
 
-        df = df[
-            (df['fecha'] == hoy) &
-            (df['usuario'] == usuario) &
-            (df['codigo'].astype(str) == str(codigo))
-        ]
-
-        if df.empty:
-            return 0
-
-        return int(df['cantidad_escaneada'].sum())
-
-    except Exception as e:
-        st.error(f"Error sumando escaneos: {e}")
-        return 0
-
-
-            
             # Verificar que existe la columna cantidad_escaneada
             if 'cantidad_escaneada' not in df.columns:
                 st.error("⚠️ El CSV no tiene columna 'cantidad_escaneada'")
                 return 0
-            
+
+            df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+            df['fecha'] = df['timestamp'].dt.strftime('%Y-%m-%d')
+
+            hoy = datetime.now().strftime('%Y-%m-%d')
+
             # Filtrar
-            df['fecha'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d')
-            mask = (df['fecha'] == hoy) & (df['usuario'] == usuario) & (df['codigo'] == codigo)
+            mask = (df['fecha'] == hoy) & (df['usuario'] == usuario) & (df['codigo'].astype(str) == str(codigo))
             df_filtrado = df[mask]
-            
+
             if df_filtrado.empty:
                 return 0
-            
+
             # Asegurar que sea número y sumar
             total = pd.to_numeric(df_filtrado['cantidad_escaneada'], errors='coerce').fillna(0).sum()
             return int(total)
@@ -777,7 +760,7 @@ def total_escaneado_hoy(usuario, codigo):
             diferencia = total_contado - prod['stock_sistema']
             st.metric("Diferencia", f"{diferencia:+d}", delta=diferencia)
         with colm4:
-            # Total escaneos hoy del usuario (por si quieres verlo)
+            # Total escaneos hoy del usuario
             total_hoy = 0
             if os.path.exists(ARCHIVO_ESCANEOS):
                 try:
@@ -844,7 +827,7 @@ def total_escaneado_hoy(usuario, codigo):
                 total_anterior = total_escaneado_hoy(usuario_actual, codigo_limpio)
                 nuevo_total = total_anterior + cantidad
 
-                # --- GUARDAR ESCANEO (CORREGIDO) ---
+                # --- GUARDAR ESCANEO ---
                 timestamp_actual = datetime.now()
                 
                 # Crear DataFrame con TODAS las columnas necesarias
