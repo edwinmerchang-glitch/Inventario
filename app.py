@@ -589,10 +589,10 @@ def mostrar_importar_excel():
             st.error(f"❌ Error: {str(e)}")
 
 # ======================================================
-# 4️⃣ PÁGINA: CONTEO FÍSICO - VERSIÓN CORREGIDA (SÍ SUMA)
+# 4️⃣ PÁGINA: CONTEO FÍSICO - VERSIÓN QUE SÍ SUMA
 # ======================================================
 def mostrar_conteo_fisico():
-    """Mostrar página de conteo físico - VERSIÓN CORREGIDA"""
+    """Mostrar página de conteo físico - VERSIÓN QUE SÍ SUMA"""
     if not tiene_permiso("inventario"):
         st.error("⛔ No tienes permisos para acceder a esta sección")
         st.info("Solo usuarios con rol 'inventario' o 'admin' pueden realizar conteos")
@@ -608,31 +608,34 @@ def mostrar_conteo_fisico():
     usuario_actual = st.session_state.nombre
     hoy = datetime.now().strftime("%Y-%m-%d")
 
-    # --- CORRECCIÓN 1: Función para filtrar por fecha correctamente ---
-    def filtrar_escaneos_hoy(df, usuario=None, codigo=None):
-        """Filtrar escaneos de hoy, opcionalmente por usuario y código"""
-        if df.empty:
-            return pd.DataFrame()
+    # --- FUNCIÓN CRÍTICA: Calcular total real del día para un producto ---
+    def calcular_total_dia(usuario, codigo):
+        """Calcula la suma real de escaneos del día para un usuario y código"""
+        if escaneos_df.empty:
+            return 0
         
-        # Crear columna de fecha sin hora para comparar
-        df_filtrado = df.copy()
-        df_filtrado['fecha_solo'] = pd.to_datetime(df_filtrado['timestamp']).dt.strftime('%Y-%m-%d')
+        # Filtrar por usuario, código y fecha de hoy
+        mask = (escaneos_df['usuario'] == usuario) & (escaneos_df['codigo'] == codigo)
+        if not mask.any():
+            return 0
         
-        # Aplicar filtros
-        mask = df_filtrado['fecha_solo'] == hoy
-        if usuario:
-            mask &= (df_filtrado['usuario'] == usuario)
-        if codigo:
-            mask &= (df_filtrado['codigo'] == codigo)
+        # Convertir timestamps y filtrar por fecha
+        df_filtrado = escaneos_df[mask].copy()
+        df_filtrado['fecha'] = pd.to_datetime(df_filtrado['timestamp']).dt.strftime('%Y-%m-%d')
+        df_hoy = df_filtrado[df_filtrado['fecha'] == hoy]
         
-        return df_filtrado[mask]
+        if df_hoy.empty:
+            return 0
+        
+        # Sumar todas las cantidades escaneadas hoy
+        return df_hoy['cantidad_escaneada'].sum()
 
-    # --- CORRECCIÓN 2: Determinar producto actual y calcular totales ---
+    # --- Determinar producto actual ---
     producto_actual_codigo = None
     producto_actual_info = None
     total_contado_hoy = 0
 
-    # 1. Prioridad 1: Producto guardado en sesión
+    # 1. Prioridad: Producto guardado en sesión
     if st.session_state.producto_actual_conteo:
         producto_actual_codigo = st.session_state.producto_actual_conteo.get('codigo')
         producto_en_stock = stock_df[stock_df["codigo"].astype(str) == str(producto_actual_codigo)]
@@ -646,20 +649,16 @@ def mostrar_conteo_fisico():
                 'stock_sistema': int(prod["stock_sistema"])
             }
             st.session_state.producto_actual_conteo = producto_actual_info
-        else:
-            st.session_state.producto_actual_conteo = None
-            st.session_state.conteo_actual_session = 0
 
-    # 2. Prioridad 2: Último escaneo de hoy del usuario
+    # 2. Si no hay producto en sesión, buscar el último escaneado
     if not producto_actual_info and not escaneos_df.empty:
-        escaneos_hoy_usuario = filtrar_escaneos_hoy(escaneos_df, usuario=usuario_actual)
-        
-        if not escaneos_hoy_usuario.empty:
-            # Obtener el código más reciente (último escaneo)
-            ultimo_escaneo = escaneos_hoy_usuario.sort_values('timestamp', ascending=False).iloc[0]
-            producto_actual_codigo = ultimo_escaneo['codigo']
+        # Buscar el último escaneo del usuario
+        escaneos_usuario = escaneos_df[escaneos_df['usuario'] == usuario_actual]
+        if not escaneos_usuario.empty:
+            ultimo_escaneo = escaneos_usuario.sort_values('timestamp', ascending=False).iloc[0]
+            codigo_ultimo = ultimo_escaneo['codigo']
             
-            producto_en_stock = stock_df[stock_df["codigo"].astype(str) == str(producto_actual_codigo)]
+            producto_en_stock = stock_df[stock_df["codigo"].astype(str) == str(codigo_ultimo)]
             if not producto_en_stock.empty:
                 prod = producto_en_stock.iloc[0]
                 producto_actual_info = {
@@ -670,18 +669,9 @@ def mostrar_conteo_fisico():
                 }
                 st.session_state.producto_actual_conteo = producto_actual_info
 
-    # 3. Calcular total contado hoy para el producto actual
+    # 3. Calcular total REAL del día para el producto actual
     if producto_actual_info:
-        escaneos_hoy_producto = filtrar_escaneos_hoy(
-            escaneos_df, 
-            usuario=usuario_actual, 
-            codigo=producto_actual_info['codigo']
-        )
-        
-        if not escaneos_hoy_producto.empty:
-            total_contado_hoy = escaneos_hoy_producto["cantidad_escaneada"].sum()
-        
-        # Actualizar sesión
+        total_contado_hoy = calcular_total_dia(usuario_actual, producto_actual_info['codigo'])
         st.session_state.conteo_actual_session = total_contado_hoy
 
     # --- Panel de información del producto actual ---
@@ -703,9 +693,10 @@ def mostrar_conteo_fisico():
             st.metric("Contado hoy", total_contado_hoy)
         with col_stat3:
             diferencia = total_contado_hoy - producto_actual_info['stock_sistema']
-            st.metric("Diferencia", f"{diferencia:+d}", delta_color="off")
+            # Usar delta para mostrar si es positivo/negativo
+            st.metric("Diferencia", diferencia, delta=diferencia)
         with col_stat4:
-            total_hoy_usuario = len(filtrar_escaneos_hoy(escaneos_df, usuario=usuario_actual))
+            total_hoy_usuario = len(escaneos_df[escaneos_df['usuario'] == usuario_actual]) if not escaneos_df.empty else 0
             st.metric("Mis escaneos hoy", total_hoy_usuario)
 
     # --- Formulario principal de escaneo ---
@@ -749,7 +740,7 @@ def mostrar_conteo_fisico():
 
             if producto_encontrado.empty:
                 st.error(f"❌ Producto '{codigo_limpio}' no encontrado en el sistema.")
-                # Opción para registrar nuevo producto (se mantiene igual)
+                # Opción para registrar nuevo producto
                 with st.expander("📝 Registrar nuevo producto", expanded=True):
                     with st.form("form_nuevo_producto_registro"):
                         nuevo_nombre = st.text_input("Nombre del producto *")
@@ -773,18 +764,24 @@ def mostrar_conteo_fisico():
                 area_producto = producto_info["area"]
                 stock_sistema = int(producto_info["stock_sistema"])
 
-                # --- CORRECCIÓN 3: Calcular nuevo total acumulado ---
-                # Primero, recargar escaneos para tener datos actualizados
-                escaneos_df_actual = cargar_escaneos_detallados()
-                
-                escaneos_hoy_producto = filtrar_escaneos_hoy(
-                    escaneos_df_actual,
-                    usuario=usuario_actual,
-                    codigo=codigo_limpio
-                )
-                
-                total_anterior_hoy = escaneos_hoy_producto["cantidad_escaneada"].sum() if not escaneos_hoy_producto.empty else 0
-                nuevo_total_hoy = total_anterior_hoy + cantidad
+                # --- CÁLCULO CORRECTO: Leer el archivo directamente para obtener el total real ---
+                # Esto evita problemas de caché o datos desactualizados
+                if os.path.exists(ARCHIVO_ESCANEOS):
+                    df_escaneos_temp = pd.read_csv(ARCHIVO_ESCANEOS)
+                    df_escaneos_temp['fecha_temp'] = pd.to_datetime(df_escaneos_temp['timestamp']).dt.strftime('%Y-%m-%d')
+                    
+                    # Filtrar escaneos de hoy del usuario para este producto
+                    mask_temp = (
+                        (df_escaneos_temp['fecha_temp'] == hoy) &
+                        (df_escaneos_temp['usuario'] == usuario_actual) &
+                        (df_escaneos_temp['codigo'] == codigo_limpio)
+                    )
+                    escaneos_previos = df_escaneos_temp[mask_temp]
+                    total_anterior = escaneos_previos['cantidad_escaneada'].sum() if not escaneos_previos.empty else 0
+                else:
+                    total_anterior = 0
+
+                nuevo_total_hoy = total_anterior + cantidad
 
                 # Crear registro de escaneo
                 timestamp_actual = datetime.now()
@@ -795,7 +792,7 @@ def mostrar_conteo_fisico():
                     "producto": nombre_producto,
                     "area": area_producto,
                     "cantidad_escaneada": cantidad,
-                    "total_acumulado": nuevo_total_hoy,
+                    "total_acumulado": nuevo_total_hoy,  # Guardamos el total acumulado
                     "stock_sistema": stock_sistema,
                     "tipo_operacion": "ESCANEO"
                 }
@@ -867,47 +864,58 @@ def mostrar_conteo_fisico():
     st.markdown("---")
     st.subheader("📱 Últimos escaneos de hoy")
 
-    escaneos_hoy_mostrar = filtrar_escaneos_hoy(escaneos_df).tail(5)
-    
-    if not escaneos_hoy_mostrar.empty:
-        escaneos_display = escaneos_hoy_mostrar.copy()
-        escaneos_display["hora"] = pd.to_datetime(escaneos_display["timestamp"]).dt.strftime("%H:%M:%S")
-        st.dataframe(
-            escaneos_display[["hora", "usuario", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
-            use_container_width=True,
-            hide_index=True
-        )
+    if not escaneos_df.empty:
+        # Filtrar escaneos de hoy
+        escaneos_df_temp = escaneos_df.copy()
+        escaneos_df_temp['fecha_escaneo'] = pd.to_datetime(escaneos_df_temp['timestamp']).dt.strftime('%Y-%m-%d')
+        escaneos_hoy = escaneos_df_temp[escaneos_df_temp['fecha_escaneo'] == hoy].tail(5)
+        
+        if not escaneos_hoy.empty:
+            escaneos_display = escaneos_hoy.copy()
+            escaneos_display["hora"] = pd.to_datetime(escaneos_display["timestamp"]).dt.strftime("%H:%M:%S")
+            st.dataframe(
+                escaneos_display[["hora", "usuario", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No hay escaneos registrados hoy")
     else:
-        st.info("No hay escaneos registrados hoy")
+        st.info("No hay escaneos registrados")
 
     # --- Estadísticas del día ---
     st.markdown("---")
     st.subheader("📊 Estadísticas del día")
 
-    escaneos_hoy_todos = filtrar_escaneos_hoy(escaneos_df)
-    
-    col_est1, col_est2, col_est3 = st.columns(3)
+    if not escaneos_df.empty:
+        escaneos_df_temp = escaneos_df.copy()
+        escaneos_df_temp['fecha_escaneo'] = pd.to_datetime(escaneos_df_temp['timestamp']).dt.strftime('%Y-%m-%d')
+        escaneos_hoy_todos = escaneos_df_temp[escaneos_df_temp['fecha_escaneo'] == hoy]
+        
+        col_est1, col_est2, col_est3 = st.columns(3)
 
-    with col_est1:
-        productos_unicos = escaneos_hoy_todos["codigo"].nunique() if not escaneos_hoy_todos.empty else 0
-        st.metric("Productos escaneados", productos_unicos)
+        with col_est1:
+            productos_unicos = escaneos_hoy_todos["codigo"].nunique() if not escaneos_hoy_todos.empty else 0
+            st.metric("Productos escaneados", productos_unicos)
 
-    with col_est2:
-        total_unidades = escaneos_hoy_todos["cantidad_escaneada"].sum() if not escaneos_hoy_todos.empty else 0
-        st.metric("Unidades escaneadas", total_unidades)
+        with col_est2:
+            total_unidades = escaneos_hoy_todos["cantidad_escaneada"].sum() if not escaneos_hoy_todos.empty else 0
+            st.metric("Unidades escaneadas", total_unidades)
 
-    with col_est3:
-        conteos_hoy_usuario = conteos_df[
-            (conteos_df["usuario"] == usuario_actual) &
-            (conteos_df["fecha"].str.startswith(hoy))
-        ]
-        if not conteos_hoy_usuario.empty:
-            exactos = len(conteos_hoy_usuario[conteos_hoy_usuario["diferencia"] == 0])
-            total_conteos = len(conteos_hoy_usuario)
-            precision = (exactos / total_conteos * 100) if total_conteos > 0 else 0
-            st.metric("Precisión", f"{precision:.1f}%")
-        else:
-            st.metric("Precisión", "0%")
+        with col_est3:
+            conteos_hoy_usuario = conteos_df[
+                (conteos_df["usuario"] == usuario_actual) &
+                (conteos_df["fecha"].str.startswith(hoy))
+            ]
+            if not conteos_hoy_usuario.empty:
+                exactos = len(conteos_hoy_usuario[conteos_hoy_usuario["diferencia"] == 0])
+                total_conteos = len(conteos_hoy_usuario)
+                precision = (exactos / total_conteos * 100) if total_conteos > 0 else 0
+                st.metric("Precisión", f"{precision:.1f}%")
+            else:
+                st.metric("Precisión", "0%")
+    else:
+        st.info("No hay datos para mostrar")
 
 # ======================================================
 # 5️⃣ PÁGINA: REPORTES
