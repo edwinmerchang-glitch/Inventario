@@ -203,28 +203,29 @@ def cargar_escaneos_detallados():
         ])
 
 def guardar_escaneo_detallado(escaneo_data):
-    """Guardar UN escaneo individual - AHORA GUARDA SIEMPRE EN EL MISMO ARCHIVO"""
+    """Guardar UN escaneo individual PERMANENTEMENTE - VERSIÓN CORREGIDA"""
     try:
         # Asegurar que los números sean enteros
         escaneo_data['cantidad_escaneada'] = int(escaneo_data['cantidad_escaneada'])
         escaneo_data['total_acumulado'] = int(escaneo_data['total_acumulado'])
         escaneo_data['stock_sistema'] = int(escaneo_data['stock_sistema'])
         
-        # Cargar existentes o crear nuevo DataFrame
-        if os.path.exists(ARCHIVO_ESCANEOS):
-            escaneos_df = pd.read_csv(ARCHIVO_ESCANEOS)
-        else:
-            escaneos_df = pd.DataFrame(columns=[
-                "timestamp", "usuario", "codigo", "producto", "area",
-                "cantidad_escaneada", "total_acumulado", "stock_sistema", "tipo_operacion"
-            ])
+        # Crear DataFrame con el nuevo registro
+        nuevo_registro = pd.DataFrame([escaneo_data])
         
-        # Agregar nuevo escaneo
-        nuevo_escaneo = pd.DataFrame([escaneo_data])
-        escaneos_df = pd.concat([escaneos_df, nuevo_escaneo], ignore_index=True)
+        # Leer o crear el archivo
+        if os.path.exists(ARCHIVO_ESCANEOS):
+            df_existente = pd.read_csv(ARCHIVO_ESCANEOS)
+            # Asegurar que todas las columnas existen
+            for col in nuevo_registro.columns:
+                if col not in df_existente.columns:
+                    df_existente[col] = None
+            df_final = pd.concat([df_existente, nuevo_registro], ignore_index=True)
+        else:
+            df_final = nuevo_registro
         
         # Guardar
-        escaneos_df.to_csv(ARCHIVO_ESCANEOS, index=False)
+        df_final.to_csv(ARCHIVO_ESCANEOS, index=False)
         
         # Actualizar sesión
         if 'historial_escaneos' not in st.session_state:
@@ -621,10 +622,10 @@ def mostrar_importar_excel():
             st.error(f"❌ Error: {str(e)}")
 
 # ======================================================
-# 4️⃣ PÁGINA: CONTEO FÍSICO - VERSIÓN SIMPLIFICADA Y FUNCIONAL
+# 4️⃣ PÁGINA: CONTEO FÍSICO - VERSIÓN 100% FUNCIONAL
 # ======================================================
 def mostrar_conteo_fisico():
-    """Mostrar página de conteo físico - VERSIÓN SIMPLIFICADA"""
+    """Mostrar página de conteo físico - VERSIÓN FUNCIONAL"""
     if not tiene_permiso("inventario"):
         st.error("⛔ No tienes permisos para acceder a esta sección")
         st.info("Solo usuarios con rol 'inventario' o 'admin' pueden realizar conteos")
@@ -639,13 +640,14 @@ def mostrar_conteo_fisico():
     usuario_actual = st.session_state.nombre
     hoy = datetime.now().strftime("%Y-%m-%d")
 
-    # --- FUNCIÓN SIMPLE PARA VER EL CSV ---
+    # --- FUNCIÓN PARA VER EL CSV (CORREGIDA) ---
     def mostrar_contenido_csv():
         if os.path.exists(ARCHIVO_ESCANEOS):
             try:
                 df = pd.read_csv(ARCHIVO_ESCANEOS)
                 st.write(f"**Total de registros en CSV:** {len(df)}")
-                st.dataframe(df.tail(10))
+                st.write(f"**Columnas:** {list(df.columns)}")
+                st.dataframe(df)
                 return df
             except Exception as e:
                 st.error(f"Error leyendo CSV: {e}")
@@ -653,15 +655,20 @@ def mostrar_conteo_fisico():
             st.warning("⚠️ El archivo CSV NO EXISTE")
         return None
 
-    # --- FUNCIÓN PARA SUMAR (SIMPLIFICADA) ---
+    # --- FUNCIÓN PARA CALCULAR TOTAL (CORREGIDA) ---
     def total_escaneado_hoy(usuario, codigo):
-        """Calcula el total escaneado hoy para un usuario y código"""
+        """Calcula el total escaneado hoy"""
         if not os.path.exists(ARCHIVO_ESCANEOS):
             return 0
         
         try:
             df = pd.read_csv(ARCHIVO_ESCANEOS)
             if df.empty:
+                return 0
+            
+            # Verificar que existe la columna cantidad_escaneada
+            if 'cantidad_escaneada' not in df.columns:
+                st.error("⚠️ El CSV no tiene columna 'cantidad_escaneada'")
                 return 0
             
             # Filtrar
@@ -672,8 +679,8 @@ def mostrar_conteo_fisico():
             if df_filtrado.empty:
                 return 0
             
-            # Sumar
-            total = df_filtrado['cantidad_escaneada'].astype(int).sum()
+            # Asegurar que sea número y sumar
+            total = pd.to_numeric(df_filtrado['cantidad_escaneada'], errors='coerce').fillna(0).sum()
             return int(total)
         except Exception as e:
             st.error(f"Error calculando total: {e}")
@@ -700,21 +707,23 @@ def mostrar_conteo_fisico():
     if not st.session_state.producto_actual_conteo and os.path.exists(ARCHIVO_ESCANEOS):
         try:
             df_temp = pd.read_csv(ARCHIVO_ESCANEOS)
-            if not df_temp.empty:
+            if not df_temp.empty and 'timestamp' in df_temp.columns:
+                df_temp['timestamp'] = pd.to_datetime(df_temp['timestamp'], errors='coerce')
                 df_temp = df_temp[df_temp['usuario'] == usuario_actual]
                 if not df_temp.empty:
                     ultimo = df_temp.sort_values('timestamp', ascending=False).iloc[0]
-                    codigo_ultimo = ultimo['codigo']
+                    codigo_ultimo = str(ultimo['codigo']).strip() if 'codigo' in ultimo else None
                     
-                    producto_en_stock = stock_df[stock_df["codigo"].astype(str) == str(codigo_ultimo)]
-                    if not producto_en_stock.empty:
-                        prod = producto_en_stock.iloc[0]
-                        st.session_state.producto_actual_conteo = {
-                            'codigo': prod["codigo"],
-                            'nombre': prod["producto"],
-                            'area': prod["area"],
-                            'stock_sistema': int(prod["stock_sistema"])
-                        }
+                    if codigo_ultimo:
+                        producto_en_stock = stock_df[stock_df["codigo"].astype(str) == codigo_ultimo]
+                        if not producto_en_stock.empty:
+                            prod = producto_en_stock.iloc[0]
+                            st.session_state.producto_actual_conteo = {
+                                'codigo': prod["codigo"],
+                                'nombre': prod["producto"],
+                                'area': prod["area"],
+                                'stock_sistema': int(prod["stock_sistema"])
+                            }
         except Exception as e:
             st.error(f"Error al buscar último escaneo: {e}")
 
@@ -746,13 +755,14 @@ def mostrar_conteo_fisico():
             diferencia = total_contado - prod['stock_sistema']
             st.metric("Diferencia", f"{diferencia:+d}", delta=diferencia)
         with colm4:
-            # Total escaneos hoy del usuario
+            # Total escaneos hoy del usuario (por si quieres verlo)
             total_hoy = 0
             if os.path.exists(ARCHIVO_ESCANEOS):
                 try:
                     df_temp = pd.read_csv(ARCHIVO_ESCANEOS)
-                    df_temp['fecha'] = pd.to_datetime(df_temp['timestamp']).dt.strftime('%Y-%m-%d')
-                    total_hoy = len(df_temp[(df_temp['fecha'] == hoy) & (df_temp['usuario'] == usuario_actual)])
+                    if not df_temp.empty and 'timestamp' in df_temp.columns:
+                        df_temp['fecha'] = pd.to_datetime(df_temp['timestamp']).dt.strftime('%Y-%m-%d')
+                        total_hoy = len(df_temp[(df_temp['fecha'] == hoy) & (df_temp['usuario'] == usuario_actual)])
                 except:
                     pass
             st.metric("Mis escaneos hoy", total_hoy)
@@ -812,9 +822,12 @@ def mostrar_conteo_fisico():
                 total_anterior = total_escaneado_hoy(usuario_actual, codigo_limpio)
                 nuevo_total = total_anterior + cantidad
 
-                # Guardar
-                escaneo_data = {
-                    "timestamp": datetime.now(),
+                # --- GUARDAR ESCANEO (CORREGIDO) ---
+                timestamp_actual = datetime.now()
+                
+                # Crear DataFrame con TODAS las columnas necesarias
+                nuevo_registro = pd.DataFrame([{
+                    "timestamp": timestamp_actual,
                     "usuario": usuario_actual,
                     "codigo": codigo_limpio,
                     "producto": prod["producto"],
@@ -823,30 +836,39 @@ def mostrar_conteo_fisico():
                     "total_acumulado": int(nuevo_total),
                     "stock_sistema": int(prod["stock_sistema"]),
                     "tipo_operacion": "ESCANEO"
-                }
+                }])
 
-                ok, msg = guardar_escaneo_detallado(escaneo_data)
-
-                if ok:
-                    actualizar_resumen_conteo(
-                        usuario_actual, codigo_limpio, prod["producto"],
-                        prod["area"], int(prod["stock_sistema"]), nuevo_total
-                    )
-
-                    st.session_state.producto_actual_conteo = {
-                        'codigo': codigo_limpio,
-                        'nombre': prod["producto"],
-                        'area': prod["area"],
-                        'stock_sistema': int(prod["stock_sistema"])
-                    }
-                    st.session_state.conteo_actual_session = nuevo_total
-                    st.session_state.total_escaneos_session += 1
-
-                    st.success(f"✅ +{cantidad} = {nuevo_total}")
-                    time.sleep(0.5)
-                    st.rerun()
+                # Guardar en CSV
+                if os.path.exists(ARCHIVO_ESCANEOS):
+                    # Si existe, leer y concatenar
+                    df_existente = pd.read_csv(ARCHIVO_ESCANEOS)
+                    df_final = pd.concat([df_existente, nuevo_registro], ignore_index=True)
                 else:
-                    st.error(f"❌ Error: {msg}")
+                    # Si no existe, crear nuevo
+                    df_final = nuevo_registro
+
+                # Guardar
+                df_final.to_csv(ARCHIVO_ESCANEOS, index=False)
+
+                # Actualizar resumen de conteos
+                actualizar_resumen_conteo(
+                    usuario_actual, codigo_limpio, prod["producto"],
+                    prod["area"], int(prod["stock_sistema"]), nuevo_total
+                )
+
+                # Actualizar sesión
+                st.session_state.producto_actual_conteo = {
+                    'codigo': codigo_limpio,
+                    'nombre': prod["producto"],
+                    'area': prod["area"],
+                    'stock_sistema': int(prod["stock_sistema"])
+                }
+                st.session_state.conteo_actual_session = nuevo_total
+                st.session_state.total_escaneos_session += 1
+
+                st.success(f"✅ +{cantidad} = {nuevo_total}")
+                time.sleep(0.5)
+                st.rerun()
 
     # --- Botones de acción ---
     if st.session_state.producto_actual_conteo:
@@ -860,14 +882,18 @@ def mostrar_conteo_fisico():
         with col_acc2:
             if st.button("📋 Ver historial", use_container_width=True):
                 if os.path.exists(ARCHIVO_ESCANEOS):
-                    df_temp = pd.read_csv(ARCHIVO_ESCANEOS)
-                    df_temp['timestamp'] = pd.to_datetime(df_temp['timestamp'])
-                    historial = df_temp[
-                        (df_temp['codigo'] == st.session_state.producto_actual_conteo['codigo']) &
-                        (df_temp['usuario'] == usuario_actual)
-                    ].tail(10)
-                    if not historial.empty:
-                        st.dataframe(historial[['timestamp', 'cantidad_escaneada', 'total_acumulado']])
+                    try:
+                        df_temp = pd.read_csv(ARCHIVO_ESCANEOS)
+                        if not df_temp.empty and 'timestamp' in df_temp.columns:
+                            df_temp['timestamp'] = pd.to_datetime(df_temp['timestamp'])
+                            historial = df_temp[
+                                (df_temp['codigo'].astype(str) == str(st.session_state.producto_actual_conteo['codigo'])) &
+                                (df_temp['usuario'] == usuario_actual)
+                            ].tail(10)
+                            if not historial.empty:
+                                st.dataframe(historial[['timestamp', 'cantidad_escaneada', 'total_acumulado']])
+                    except Exception as e:
+                        st.error(f"Error al cargar historial: {e}")
 
 # ======================================================
 # 5️⃣ PÁGINA: REPORTES
