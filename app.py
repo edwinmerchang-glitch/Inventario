@@ -22,21 +22,6 @@ ARCHIVO_USUARIOS = "usuarios.csv"
 ARCHIVO_ESCANEOS = "escaneos_detallados.csv"
 
 # ======================================================
-# DIAGNÓSTICO - Ver dónde se están guardando los archivos
-# ======================================================
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔧 DIAGNÓSTICO")
-st.sidebar.write(f"Directorio actual: {os.getcwd()}")
-st.sidebar.write(f"Existe escaneos.csv: {os.path.exists(ARCHIVO_ESCANEOS)}")
-
-if os.path.exists(ARCHIVO_ESCANEOS):
-    try:
-        tamaño = os.path.getsize(ARCHIVO_ESCANEOS)
-        st.sidebar.write(f"Tamaño del archivo: {tamaño} bytes")
-    except:
-        st.sidebar.write("Error al leer tamaño")
-
-# ======================================================
 # SISTEMA DE AUTENTICACIÓN Y PERMISOS
 # ======================================================
 def inicializar_sesion():
