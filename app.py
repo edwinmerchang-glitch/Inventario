@@ -180,6 +180,11 @@ def cargar_escaneos_detallados():
 def guardar_escaneo_detallado(escaneo_data):
     """Guardar UN escaneo individual PERMANENTEMENTE"""
     try:
+        # Asegurar que los números sean enteros antes de guardar
+        escaneo_data['cantidad_escaneada'] = int(escaneo_data['cantidad_escaneada'])
+        escaneo_data['total_acumulado'] = int(escaneo_data['total_acumulado'])
+        escaneo_data['stock_sistema'] = int(escaneo_data['stock_sistema'])
+        
         escaneos_df = cargar_escaneos_detallados()
         nuevo_escaneo = pd.DataFrame([escaneo_data])
         escaneos_df = pd.concat([escaneos_df, nuevo_escaneo], ignore_index=True)
@@ -589,10 +594,10 @@ def mostrar_importar_excel():
             st.error(f"❌ Error: {str(e)}")
 
 # ======================================================
-# 4️⃣ PÁGINA: CONTEO FÍSICO - VERSIÓN DEFINITIVA (SÍ SUMA)
+# 4️⃣ PÁGINA: CONTEO FÍSICO - VERSIÓN QUE SÍ SUMA (FORZADO)
 # ======================================================
 def mostrar_conteo_fisico():
-    """Mostrar página de conteo físico - VERSIÓN DEFINITIVA"""
+    """Mostrar página de conteo físico - VERSIÓN QUE SÍ SUMA"""
     if not tiene_permiso("inventario"):
         st.error("⛔ No tienes permisos para acceder a esta sección")
         st.info("Solo usuarios con rol 'inventario' o 'admin' pueden realizar conteos")
@@ -607,9 +612,23 @@ def mostrar_conteo_fisico():
     usuario_actual = st.session_state.nombre
     hoy = datetime.now().strftime("%Y-%m-%d")
 
-    # --- FUNCIÓN CRÍTICA: Leer el archivo directamente y sumar ---
+    # --- FUNCIÓN DE DEPURACIÓN: Ver qué hay en el CSV ---
+    def debug_mostrar_csv():
+        """Función temporal para ver el contenido del CSV"""
+        if os.path.exists(ARCHIVO_ESCANEOS):
+            try:
+                df = pd.read_csv(ARCHIVO_ESCANEOS)
+                st.write("Debug - Contenido del CSV:")
+                st.dataframe(df.tail(10))
+                if not df.empty and 'cantidad_escaneada' in df.columns:
+                    st.write(f"Tipo de dato: {df['cantidad_escaneada'].dtype}")
+                    st.write(f"Valores únicos: {df['cantidad_escaneada'].unique()}")
+            except Exception as e:
+                st.write(f"Error al leer CSV: {e}")
+
+    # --- FUNCIÓN QUE SÍ SUMA: Lee el archivo y suma forzando a número ---
     def obtener_total_real(usuario, codigo):
-        """Lee el CSV directamente y suma las cantidades del día"""
+        """Lee el CSV y suma las cantidades asegurando que sean números"""
         if not os.path.exists(ARCHIVO_ESCANEOS):
             return 0
         
@@ -619,26 +638,37 @@ def mostrar_conteo_fisico():
             if df.empty:
                 return 0
             
-            # Asegurar que timestamp sea datetime
+            # FORZAR a que timestamp sea datetime
             df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
             
-            # Filtrar por fecha de hoy
+            # Crear columna de fecha
             df['fecha'] = df['timestamp'].dt.strftime('%Y-%m-%d')
-            df_hoy = df[df['fecha'] == hoy]
             
+            # Filtrar por fecha de hoy
+            df_hoy = df[df['fecha'] == hoy].copy()
             if df_hoy.empty:
                 return 0
             
             # Filtrar por usuario y código
             mask = (df_hoy['usuario'] == usuario) & (df_hoy['codigo'] == codigo)
-            df_filtrado = df_hoy[mask]
+            df_filtrado = df_hoy[mask].copy()
             
             if df_filtrado.empty:
                 return 0
             
-            # Asegurar que cantidad_escaneada sea numérico y sumar
-            df_filtrado['cantidad_escaneada'] = pd.to_numeric(df_filtrado['cantidad_escaneada'], errors='coerce').fillna(0)
-            return int(df_filtrado['cantidad_escaneada'].sum())
+            # CONVERTIR A NÚMERO POR LAS BUENAS O POR LAS MALAS
+            # Método 1: Usar to_numeric
+            df_filtrado['cantidad_escaneada'] = pd.to_numeric(df_filtrado['cantidad_escaneada'], errors='coerce')
+            
+            # Método 2: Si aún hay NaN, reemplazar por 0
+            df_filtrado['cantidad_escaneada'] = df_filtrado['cantidad_escaneada'].fillna(0)
+            
+            # Método 3: Forzar a entero
+            df_filtrado['cantidad_escaneada'] = df_filtrado['cantidad_escaneada'].astype(int)
+            
+            # SUMAR
+            total = int(df_filtrado['cantidad_escaneada'].sum())
+            return total
             
         except Exception as e:
             print(f"Error al obtener total real: {e}")
@@ -727,6 +757,10 @@ def mostrar_conteo_fisico():
                     pass
             st.metric("Mis escaneos hoy", total_hoy)
 
+        # --- BOTÓN DE DEBUG (opcional, lo puedes quitar después) ---
+        with st.expander("🔧 Debug - Ver contenido del CSV"):
+            debug_mostrar_csv()
+
     # --- Formulario principal de escaneo ---
     st.markdown("---")
     st.subheader("📷 Escanear producto")
@@ -792,7 +826,7 @@ def mostrar_conteo_fisico():
                 area_producto = producto_info["area"]
                 stock_sistema = int(producto_info["stock_sistema"])
 
-                # --- CALCULAR TOTAL ANTERIOR LEYENDO DIRECTAMENTE EL ARCHIVO ---
+                # --- CALCULAR TOTAL ANTERIOR ---
                 total_anterior = 0
                 if os.path.exists(ARCHIVO_ESCANEOS):
                     try:
@@ -807,9 +841,10 @@ def mostrar_conteo_fisico():
                                 (df_temp['usuario'] == usuario_actual) &
                                 (df_temp['codigo'] == codigo_limpio)
                             )
-                            escaneos_previos = df_temp[mask]
+                            escaneos_previos = df_temp[mask].copy()
                             
                             if not escaneos_previos.empty:
+                                # FORZAR a número
                                 escaneos_previos['cantidad_escaneada'] = pd.to_numeric(escaneos_previos['cantidad_escaneada'], errors='coerce').fillna(0)
                                 total_anterior = int(escaneos_previos['cantidad_escaneada'].sum())
                     except Exception as e:
@@ -817,7 +852,7 @@ def mostrar_conteo_fisico():
 
                 nuevo_total_hoy = total_anterior + cantidad
 
-                # Crear registro de escaneo
+                # Crear registro de escaneo - asegurar que cantidad sea número
                 timestamp_actual = datetime.now()
                 escaneo_data = {
                     "timestamp": timestamp_actual,
@@ -825,8 +860,8 @@ def mostrar_conteo_fisico():
                     "codigo": codigo_limpio,
                     "producto": nombre_producto,
                     "area": area_producto,
-                    "cantidad_escaneada": cantidad,
-                    "total_acumulado": nuevo_total_hoy,
+                    "cantidad_escaneada": int(cantidad),  # FORZAR a entero
+                    "total_acumulado": int(nuevo_total_hoy),  # FORZAR a entero
                     "stock_sistema": stock_sistema,
                     "tipo_operacion": "ESCANEO"
                 }
@@ -885,14 +920,16 @@ def mostrar_conteo_fisico():
                             historial = df_temp[
                                 (df_temp["codigo"] == producto_codigo) &
                                 (df_temp["usuario"] == usuario_actual)
-                            ].tail(10)
+                            ].tail(10).copy()
                             
                             if not historial.empty:
                                 st.subheader(f"📜 Historial de {st.session_state.producto_actual_conteo['nombre'][:20]}...")
-                                historial_display = historial.copy()
-                                historial_display["timestamp"] = historial_display["timestamp"].dt.strftime("%H:%M:%S")
+                                # FORZAR a número para mostrar
+                                historial['cantidad_escaneada'] = pd.to_numeric(historial['cantidad_escaneada'], errors='coerce').fillna(0).astype(int)
+                                historial['total_acumulado'] = pd.to_numeric(historial['total_acumulado'], errors='coerce').fillna(0).astype(int)
+                                historial["timestamp"] = historial["timestamp"].dt.strftime("%H:%M:%S")
                                 st.dataframe(
-                                    historial_display[["timestamp", "cantidad_escaneada", "total_acumulado"]],
+                                    historial[["timestamp", "cantidad_escaneada", "total_acumulado"]],
                                     use_container_width=True,
                                     hide_index=True
                                 )
@@ -911,13 +948,14 @@ def mostrar_conteo_fisico():
             if not df_temp.empty:
                 df_temp['timestamp'] = pd.to_datetime(df_temp['timestamp'], errors='coerce')
                 df_temp['fecha'] = df_temp['timestamp'].dt.strftime('%Y-%m-%d')
-                df_hoy = df_temp[df_temp['fecha'] == hoy].tail(5)
+                df_hoy = df_temp[df_temp['fecha'] == hoy].tail(5).copy()
                 
                 if not df_hoy.empty:
-                    df_display = df_hoy.copy()
-                    df_display["hora"] = df_display["timestamp"].dt.strftime("%H:%M:%S")
+                    # FORZAR a número
+                    df_hoy['cantidad_escaneada'] = pd.to_numeric(df_hoy['cantidad_escaneada'], errors='coerce').fillna(0).astype(int)
+                    df_hoy["hora"] = df_hoy["timestamp"].dt.strftime("%H:%M:%S")
                     st.dataframe(
-                        df_display[["hora", "usuario", "codigo", "producto", "cantidad_escaneada"]],
+                        df_hoy[["hora", "usuario", "codigo", "producto", "cantidad_escaneada"]],
                         use_container_width=True,
                         hide_index=True
                     )
@@ -940,7 +978,7 @@ def mostrar_conteo_fisico():
             if not df_temp.empty:
                 df_temp['timestamp'] = pd.to_datetime(df_temp['timestamp'], errors='coerce')
                 df_temp['fecha'] = df_temp['timestamp'].dt.strftime('%Y-%m-%d')
-                df_hoy = df_temp[df_temp['fecha'] == hoy]
+                df_hoy = df_temp[df_temp['fecha'] == hoy].copy()
                 
                 col_est1, col_est2, col_est3 = st.columns(3)
 
