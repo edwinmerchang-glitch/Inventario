@@ -901,10 +901,10 @@ def mostrar_conteo_fisico():
                         st.error(f"Error al cargar historial: {e}")
 
 # ======================================================
-# 5️⃣ PÁGINA: REPORTES
+# 5️⃣ PÁGINA: REPORTES - VERSIÓN CORREGIDA (RESUMEN)
 # ======================================================
 def mostrar_reportes():
-    """Mostrar página de reportes"""
+    """Mostrar página de reportes con resumen por producto"""
     st.title("📊 Reportes de Conteo")
     st.markdown("---")
     
@@ -936,34 +936,95 @@ def mostrar_reportes():
         
         st.markdown("---")
         
-        st.subheader("📋 Detalle de conteos")
+        st.subheader("📋 Resumen de conteos por producto")
         
-        conteos_df_display = conteos_df.copy()
-        conteos_df_display.insert(0, '#', range(1, len(conteos_df_display) + 1))
-        
-        st.dataframe(conteos_df_display, use_container_width=True)
+        # Crear resumen agrupado por producto
+        if not escaneos_df.empty:
+            # Asegurar tipos de datos
+            escaneos_df['cantidad_escaneada'] = pd.to_numeric(escaneos_df['cantidad_escaneada'], errors='coerce').fillna(0)
+            escaneos_df['stock_sistema'] = pd.to_numeric(escaneos_df['stock_sistema'], errors='coerce').fillna(0)
+            
+            # Agrupar por producto para obtener totales
+            resumen_productos = escaneos_df.groupby(['codigo', 'producto', 'area', 'stock_sistema']).agg({
+                'cantidad_escaneada': 'sum',
+                'usuario': 'first',  # Tomar el primer usuario que escaneó
+                'timestamp': 'max'    # Tomar la última fecha de escaneo
+            }).reset_index()
+            
+            # Renombrar columnas
+            resumen_productos.columns = ['codigo', 'producto', 'area', 'stock_sistema', 
+                                        'total_contado', 'usuario', 'ultimo_escaneo']
+            
+            # Calcular diferencia
+            resumen_productos['diferencia'] = resumen_productos['total_contado'] - resumen_productos['stock_sistema']
+            
+            # Formatear fecha
+            resumen_productos['ultimo_escaneo'] = pd.to_datetime(resumen_productos['ultimo_escaneo']).dt.strftime('%Y-%m-%d %H:%M')
+            
+            # Agregar columna de índice
+            resumen_productos.insert(0, '#', range(1, len(resumen_productos) + 1))
+            
+            # Mostrar resumen
+            st.dataframe(
+                resumen_productos[['#', 'codigo', 'producto', 'area', 'stock_sistema', 
+                                  'total_contado', 'diferencia', 'usuario', 'ultimo_escaneo']],
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Métricas adicionales del resumen
+            col_m1, col_m2, col_m3 = st.columns(3)
+            with col_m1:
+                st.metric("Productos contados", len(resumen_productos))
+            with col_m2:
+                total_escaneos = int(resumen_productos['total_contado'].sum())
+                st.metric("Total unidades contadas", total_escaneos)
+            with col_m3:
+                productos_con_diferencia = len(resumen_productos[resumen_productos['diferencia'] != 0])
+                st.metric("Productos con diferencia", productos_con_diferencia)
+        else:
+            st.info("📭 No hay escaneos registrados para mostrar resumen")
     
     st.markdown("---")
-    st.subheader("📱 Historial de escaneos")
+    st.subheader("📱 Historial detallado de escaneos")
     
     if escaneos_df.empty:
         st.info("📭 No hay escaneos registrados")
     else:
-        # Mostrar últimos 20 escaneos
-        escaneos_display = escaneos_df.tail(20).copy()
-        escaneos_display["timestamp"] = pd.to_datetime(escaneos_display["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+        # Opción para ver detalle o resumen
+        ver_detalle = st.checkbox("Ver historial detallado", value=False)
         
-        st.dataframe(
-            escaneos_display[["timestamp", "usuario", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
-            use_container_width=True,
-            height=400
-        )
+        if ver_detalle:
+            # Mostrar últimos 50 escaneos en detalle
+            escaneos_display = escaneos_df.tail(50).copy()
+            escaneos_display["timestamp"] = pd.to_datetime(escaneos_display["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+            
+            st.dataframe(
+                escaneos_display[["timestamp", "usuario", "codigo", "producto", "cantidad_escaneada", "total_acumulado"]],
+                use_container_width=True,
+                height=400
+            )
+            st.caption(f"Mostrando últimos {min(50, len(escaneos_df))} escaneos")
+        else:
+            # Mostrar resumen por día
+            escaneos_df['fecha'] = pd.to_datetime(escaneos_df['timestamp']).dt.strftime('%Y-%m-%d')
+            resumen_diario = escaneos_df.groupby(['fecha', 'usuario']).agg({
+                'cantidad_escaneada': 'sum',
+                'codigo': 'nunique'
+            }).reset_index()
+            resumen_diario.columns = ['fecha', 'usuario', 'total_unidades', 'productos_distintos']
+            
+            st.dataframe(
+                resumen_diario.sort_values('fecha', ascending=False),
+                use_container_width=True,
+                hide_index=True
+            )
     
     # Exportar datos
     st.markdown("---")
     st.subheader("💾 Exportar datos")
     
-    col_exp1, col_exp2 = st.columns(2)
+    col_exp1, col_exp2, col_exp3 = st.columns(3)
     
     with col_exp1:
         if not conteos_df.empty:
@@ -976,8 +1037,28 @@ def mostrar_reportes():
     
     with col_exp2:
         if not escaneos_df.empty:
+            # Crear resumen agrupado para exportar
+            if not escaneos_df.empty:
+                resumen_export = escaneos_df.groupby(['codigo', 'producto', 'area', 'stock_sistema']).agg({
+                    'cantidad_escaneada': 'sum',
+                    'usuario': 'first',
+                    'timestamp': 'max'
+                }).reset_index()
+                resumen_export.columns = ['codigo', 'producto', 'area', 'stock_sistema', 
+                                         'total_contado', 'usuario', 'ultimo_escaneo']
+                resumen_export['diferencia'] = resumen_export['total_contado'] - resumen_export['stock_sistema']
+                
+                st.download_button(
+                    "⬇️ Descargar resumen por producto",
+                    data=resumen_export.to_csv(index=False).encode("utf-8"),
+                    file_name=f"resumen_productos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv"
+                )
+    
+    with col_exp3:
+        if not escaneos_df.empty:
             st.download_button(
-                "⬇️ Descargar historial completo CSV",
+                "⬇️ Descargar historial completo",
                 data=escaneos_df.to_csv(index=False).encode("utf-8"),
                 file_name=f"historial_completo_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv"
