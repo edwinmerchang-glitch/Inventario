@@ -263,24 +263,24 @@ def registrar_conteo(usuario, codigo, producto, marca, area, stock_sistema, cont
     return diferencia, tipo_diferencia
 
 def obtener_resumen_por_marca():
-    """Obtener resumen completo por marca - VERSIÓN OPTIMIZADA"""
+    """Obtener resumen completo por marca - VERSIÓN CORREGIDA"""
     conn = get_connection()
     
     # Query optimizada que hace todo en una sola consulta
     query = '''
         WITH conteos_hoy AS (
             SELECT codigo_producto, 
-                   SUM(conteo_fisico) as total_contado,
+                   COALESCE(SUM(conteo_fisico), 0) as total_contado,
                    COUNT(*) as veces_contado,
-                   SUM(diferencia) as dif_total
+                   COALESCE(SUM(diferencia), 0) as dif_total
             FROM conteos
             WHERE DATE(fecha) = DATE('now')
             GROUP BY codigo_producto
         )
         SELECT 
-            p.marca,
+            COALESCE(p.marca, 'SIN MARCA') as marca,
             COUNT(*) as total_productos,
-            SUM(p.stock_sistema) as stock_total_sistema,
+            COALESCE(SUM(p.stock_sistema), 0) as stock_total_sistema,
             COUNT(ch.codigo_producto) as productos_contados,
             COALESCE(SUM(ch.total_contado), 0) as total_contado,
             COALESCE(SUM(ch.dif_total), 0) - 
@@ -291,26 +291,43 @@ def obtener_resumen_por_marca():
         FROM productos p
         LEFT JOIN conteos_hoy ch ON p.codigo = ch.codigo_producto
         WHERE p.activo = 1
-        GROUP BY p.marca
-        ORDER BY p.marca
+        GROUP BY COALESCE(p.marca, 'SIN MARCA')
+        ORDER BY marca
     '''
     
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    
-    if not df.empty:
-        # Calcular productos no escaneados y porcentaje de avance
-        df['productos_no_escaneados'] = df['total_productos'] - df['productos_contados']
-        df['porcentaje_avance'] = (df['productos_contados'] / df['total_productos'] * 100).round(1)
+    try:
+        df = pd.read_sql_query(query, conn)
         
-        # Llenar NaN de manera segura
-        for col in ['exactos', 'leves', 'criticas']:
-            df[col] = df[col].fillna(0).astype(int)
-    
-    return df
+        if not df.empty:
+            # Convertir a tipos numéricos explícitamente
+            numeric_cols = ['total_productos', 'stock_total_sistema', 'productos_contados', 
+                           'total_contado', 'diferencia_neta', 'exactos', 'leves', 'criticas']
+            
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+            
+            # Calcular productos no escaneados y porcentaje de avance
+            df['productos_no_escaneados'] = df['total_productos'] - df['productos_contados']
+            df['porcentaje_avance'] = (df['productos_contados'] / df['total_productos'] * 100).round(1)
+            
+            # Llenar NaN de manera segura
+            df = df.fillna(0)
+            
+            # Asegurar tipos de datos
+            df['productos_no_escaneados'] = df['productos_no_escaneados'].astype(int)
+            df['porcentaje_avance'] = df['porcentaje_avance'].astype(float)
+        
+        conn.close()
+        return df
+        
+    except Exception as e:
+        print(f"Error en obtener_resumen_por_marca: {e}")
+        conn.close()
+        return pd.DataFrame()
 
 def obtener_detalle_productos_por_marca(marca, solo_no_escaneados=False):
-    """Obtener detalle de productos por marca - VERSIÓN OPTIMIZADA"""
+    """Obtener detalle de productos por marca - VERSIÓN CORREGIDA"""
     conn = get_connection()
     
     # Query optimizada
@@ -318,7 +335,7 @@ def obtener_detalle_productos_por_marca(marca, solo_no_escaneados=False):
         SELECT 
             p.codigo,
             p.producto,
-            p.marca,
+            COALESCE(p.marca, 'SIN MARCA') as marca,
             p.area,
             p.stock_sistema,
             COALESCE(ch.total_contado, 0) as conteo_fisico,
@@ -328,8 +345,8 @@ def obtener_detalle_productos_por_marca(marca, solo_no_escaneados=False):
             END as diferencia,
             CASE 
                 WHEN ch.total_contado IS NULL THEN 'NO_ESCANEADO'
-                WHEN ch.total_contado - p.stock_sistema = 0 THEN 'OK'
-                WHEN ABS(ch.total_contado - p.stock_sistema) <= 2 THEN 'LEVE'
+                WHEN COALESCE(ch.total_contado, 0) - p.stock_sistema = 0 THEN 'OK'
+                WHEN ABS(COALESCE(ch.total_contado, 0) - p.stock_sistema) <= 2 THEN 'LEVE'
                 ELSE 'CRITICA'
             END as estado,
             MAX(c.fecha) as ultimo_escaneo,
@@ -343,18 +360,33 @@ def obtener_detalle_productos_por_marca(marca, solo_no_escaneados=False):
         ) ch ON p.codigo = ch.codigo_producto
         LEFT JOIN conteos c ON p.codigo = c.codigo_producto 
             AND DATE(c.fecha) = DATE('now')
-        WHERE p.activo = 1 AND p.marca = ?
+        WHERE p.activo = 1 AND COALESCE(p.marca, 'SIN MARCA') = ?
     '''
     
     params = [marca]
     
     if solo_no_escaneados:
-        query = query.replace('WHERE p.activo = 1 AND p.marca = ?', 
-                             'WHERE p.activo = 1 AND p.marca = ? AND ch.total_contado IS NULL')
+        query += " AND ch.total_contado IS NULL"
     
     query += " GROUP BY p.codigo ORDER BY p.area, p.producto"
     
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
-    
-    return df
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+        
+        if not df.empty:
+            # Convertir a tipos numéricos
+            df['stock_sistema'] = pd.to_numeric(df['stock_sistema'], errors='coerce').fillna(0).astype(int)
+            df['conteo_fisico'] = pd.to_numeric(df['conteo_fisico'], errors='coerce').fillna(0).astype(int)
+            df['diferencia'] = pd.to_numeric(df['diferencia'], errors='coerce').fillna(0).astype(int)
+            
+            # Formatear fecha
+            if 'ultimo_escaneo' in df.columns:
+                df['ultimo_escaneo'] = pd.to_datetime(df['ultimo_escaneo'], errors='coerce')
+        
+        conn.close()
+        return df
+        
+    except Exception as e:
+        print(f"Error en obtener_detalle_productos_por_marca: {e}")
+        conn.close()
+        return pd.DataFrame()

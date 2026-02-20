@@ -1131,7 +1131,7 @@ def mostrar_reportes():
         mostrar_historial_completo()
 
 def mostrar_resumen_general():
-    """Mostrar resumen general de conteos"""
+    """Mostrar resumen general de conteos - VERSIÓN CORREGIDA"""
     conteos_df = cargar_conteos()
     escaneos_df = cargar_escaneos_detallados()
     
@@ -1171,11 +1171,14 @@ def mostrar_resumen_general():
     st.markdown("---")
     
     # ==============================================
-    # SECCIÓN 2: ANÁLISIS DE PRECISIÓN
+    # SECCIÓN 2: ANÁLISIS DE PRECISIÓN (CORREGIDA)
     # ==============================================
     st.subheader("🎯 Análisis de Precisión")
     
     if not conteos_df.empty and not escaneos_df.empty:
+        # Asegurar que los códigos sean strings para evitar problemas de tipos
+        escaneos_df['codigo'] = escaneos_df['codigo'].astype(str)
+        
         # Crear resumen por producto
         resumen_precision = escaneos_df.groupby(['codigo', 'producto', 'area']).agg({
             'cantidad_escaneada': 'sum'
@@ -1183,14 +1186,30 @@ def mostrar_resumen_general():
         
         resumen_precision.columns = ['codigo', 'producto', 'area', 'conteo_fisico']
         
-        # Merge con stock del sistema
+        # Cargar stock y asegurar que los códigos sean strings
         stock_df = cargar_stock()
-        resumen_precision = resumen_precision.merge(
-            stock_df[['codigo', 'stock_sistema']], 
-            on='codigo', 
-            how='left'
-        )
+        if not stock_df.empty:
+            stock_df['codigo'] = stock_df['codigo'].astype(str)
+            stock_df_subset = stock_df[['codigo', 'stock_sistema']].copy()
+        else:
+            stock_df_subset = pd.DataFrame(columns=['codigo', 'stock_sistema'])
         
+        # Merge con manejo de tipos
+        resumen_precision['codigo'] = resumen_precision['codigo'].astype(str)
+        
+        if not stock_df_subset.empty:
+            resumen_precision = resumen_precision.merge(
+                stock_df_subset, 
+                on='codigo', 
+                how='left'
+            )
+        else:
+            resumen_precision['stock_sistema'] = 0
+        
+        # Llenar valores nulos
+        resumen_precision['stock_sistema'] = resumen_precision['stock_sistema'].fillna(0).astype(int)
+        
+        # Calcular diferencias
         resumen_precision['diferencia'] = resumen_precision['conteo_fisico'] - resumen_precision['stock_sistema']
         resumen_precision['estado'] = resumen_precision['diferencia'].apply(
             lambda x: '✅ Exacto' if x == 0 else ('⚠️ Sobrante' if x > 0 else '🔻 Faltante')
@@ -1217,6 +1236,29 @@ def mostrar_resumen_general():
         with col_p4:
             diferencia_neta = resumen_precision['diferencia'].sum()
             st.metric("📊 Diferencia neta", f"{diferencia_neta:+,d}")
+        
+        # Mostrar tabla de productos con diferencias
+        st.markdown("---")
+        st.subheader("📋 Detalle de productos con diferencias")
+        
+        # Filtrar solo productos con diferencias
+        productos_con_diferencia = resumen_precision[resumen_precision['diferencia'] != 0].copy()
+        
+        if not productos_con_diferencia.empty:
+            # Ordenar por diferencia absoluta (mayor primero)
+            productos_con_diferencia['abs_diferencia'] = productos_con_diferencia['diferencia'].abs()
+            productos_con_diferencia = productos_con_diferencia.sort_values('abs_diferencia', ascending=False).drop('abs_diferencia', axis=1)
+            
+            st.dataframe(
+                productos_con_diferencia[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
+                width='stretch',
+                hide_index=True,
+                column_config={
+                    'diferencia': st.column_config.NumberColumn(format="%+d")
+                }
+            )
+        else:
+            st.info("No hay productos con diferencias")
     
     else:
         st.info("📭 No hay suficientes datos para análisis de precisión")
