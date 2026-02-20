@@ -339,7 +339,7 @@ def mostrar_sidebar():
 # 1️⃣ PÁGINA: DASHBOARD
 # ======================================================
 def mostrar_dashboard():
-    """Mostrar dashboard principal - SIN el resumen por marcas"""
+    """Mostrar dashboard principal"""
     st.title(f"🏠 Dashboard - Bienvenido {st.session_state.nombre}")
     st.markdown("---")
     
@@ -374,6 +374,169 @@ def mostrar_dashboard():
     
     st.markdown("---")
     
+    # ======================================================
+    # NUEVA SECCIÓN: RESUMEN POR ESTADO (COMO EN LA IMAGEN)
+    # ======================================================
+    st.subheader("📊 Resumen de Conteos por Estado")
+    
+    # Calcular estadísticas de conteos
+    if not conteos_df.empty and not stock_df.empty:
+        # Obtener productos únicos que han sido contados
+        productos_contados = conteos_df.groupby('codigo').agg({
+            'conteo_fisico': 'max',
+            'diferencia': 'first'
+        }).reset_index()
+        
+        # Total productos en sistema
+        total_productos_sistema = len(stock_df)
+        
+        # Productos contados (únicos)
+        total_productos_contados = len(productos_contados)
+        
+        # No escaneados
+        no_escaneados = total_productos_sistema - total_productos_contados
+        
+        # Stock total
+        stock_total = stock_df['stock_sistema'].sum() if 'stock_sistema' in stock_df.columns else 0
+        
+        # Total contado
+        total_contado = productos_contados['conteo_fisico'].sum() if 'conteo_fisico' in productos_contados.columns else 0
+        
+        # Diferencia neta
+        diferencia_neta = productos_contados['diferencia'].sum() if 'diferencia' in productos_contados.columns else 0
+        
+        # Estado de productos
+        exactos = len(productos_contados[productos_contados['diferencia'] == 0])
+        diferencias_leves = len(productos_contados[(productos_contados['diferencia'].abs() > 0) & (productos_contados['diferencia'].abs() <= 5)])
+        diferencias_criticas = len(productos_contados[productos_contados['diferencia'].abs() > 5])
+        
+        # Layout de dos columnas: izquierda (resumen numérico) y derecha (distribución por estado)
+        col_left, col_right = st.columns([1, 1])
+        
+        with col_left:
+            # Checkbox para filtrar
+            st.checkbox("Mostrar solo productos NO escaneados", key="filtro_no_escaneados")
+            
+            # Métricas en formato de cuadrícula 2x2
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.metric("**Total Productos**", total_productos_sistema)
+                st.metric("**Productos Contados**", total_productos_contados)
+            
+            with col_m2:
+                st.metric("**No Escaneados**", no_escaneados)
+                st.metric("**Stock Total**", stock_total)
+            
+            # Diferencia neta (centrada)
+            st.metric("**Diferencia Neta**", f"{diferencia_neta:+,d}")
+        
+        with col_right:
+            st.markdown("### Distribución por Estado")
+            
+            # Checkboxes para filtrar por estado
+            col_cb1, col_cb2, col_cb3 = st.columns(3)
+            with col_cb1:
+                st.checkbox("✅ Exactos", value=True, key="filtro_exactos")
+            with col_cb2:
+                st.checkbox("🟡 Diferencias Leves", value=True, key="filtro_leves")
+            with col_cb3:
+                st.checkbox("🔴 Diferencias Críticas", value=True, key="filtro_criticas")
+            
+            # Contadores por estado
+            col_est1, col_est2, col_est3 = st.columns(3)
+            with col_est1:
+                st.metric("✅ Exactos", exactos)
+            with col_est2:
+                st.metric("🟡 Leves", diferencias_leves)
+            with col_est3:
+                st.metric("🔴 Críticas", diferencias_criticas)
+            
+            # Barra de progreso visual
+            st.markdown("**Estado General**")
+            if total_productos_contados > 0:
+                progress_data = {
+                    "Exactos": exactos,
+                    "Leves": diferencias_leves,
+                    "Críticas": diferencias_criticas
+                }
+                # Crear barras de progreso horizontales
+                for estado, valor in progress_data.items():
+                    if valor > 0:
+                        porcentaje = (valor / total_productos_contados) * 100
+                        color = "green" if estado == "Exactos" else "orange" if estado == "Leves" else "red"
+                        st.markdown(
+                            f"<div style='display: flex; align-items: center; margin: 5px 0;'>"
+                            f"<span style='width: 80px;'>{estado}:</span>"
+                            f"<div style='flex-grow: 1; background-color: #f0f0f0; border-radius: 4px; margin-left: 10px;'>"
+                            f"<div style='width: {porcentaje}%; background-color: {color}; height: 20px; border-radius: 4px; text-align: center; color: white; font-size: 12px; line-height: 20px;'>{valor}</div>"
+                            f"</div>"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+        
+        st.markdown("---")
+        
+        # ======================================================
+        # LISTADO DE PRODUCTOS (COMO EN LA IMAGEN)
+        # ======================================================
+        st.subheader("📋 Listado de Productos")
+        
+        # Combinar datos de stock con conteos
+        productos_con_estado = stock_df.copy()
+        productos_con_estado['conteo_fisico'] = 0
+        productos_con_estado['diferencia'] = 0
+        productos_con_estado['estado'] = 'NO ESCANEADO'
+        
+        # Actualizar con datos de conteos
+        for _, row in productos_contados.iterrows():
+            mask = productos_con_estado['codigo'] == row['codigo']
+            if mask.any():
+                productos_con_estado.loc[mask, 'conteo_fisico'] = row['conteo_fisico']
+                productos_con_estado.loc[mask, 'diferencia'] = row['diferencia']
+                if row['diferencia'] == 0:
+                    productos_con_estado.loc[mask, 'estado'] = 'EXACTO'
+                elif abs(row['diferencia']) <= 5:
+                    productos_con_estado.loc[mask, 'estado'] = 'LEVE'
+                else:
+                    productos_con_estado.loc[mask, 'estado'] = 'CRÍTICO'
+        
+        # Aplicar filtros
+        filtros_activos = []
+        if st.session_state.get('filtro_no_escaneados', False):
+            filtros_activos.append(productos_con_estado['estado'] == 'NO ESCANEADO')
+        if st.session_state.get('filtro_exactos', True):
+            filtros_activos.append(productos_con_estado['estado'] == 'EXACTO')
+        if st.session_state.get('filtro_leves', True):
+            filtros_activos.append(productos_con_estado['estado'] == 'LEVE')
+        if st.session_state.get('filtro_criticas', True):
+            filtros_activos.append(productos_con_estado['estado'] == 'CRÍTICO')
+        
+        if filtros_activos:
+            mask_final = filtros_activos[0]
+            for mask in filtros_activos[1:]:
+                mask_final = mask_final | mask
+            productos_filtrados = productos_con_estado[mask_final]
+        else:
+            productos_filtrados = productos_con_estado
+        
+        # Mostrar tabla
+        st.dataframe(
+            productos_filtrados[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
+            width='stretch',
+            hide_index=True,
+            column_config={
+                'diferencia': st.column_config.NumberColumn(format="%+d")
+            }
+        )
+        
+        st.caption(f"Mostrando {len(productos_filtrados)} de {len(productos_con_estado)} productos")
+        
+    else:
+        st.info("No hay datos de conteo disponibles")
+    
+    st.markdown("---")
+    
+    # Resto del código existente (últimos productos, conteos, etc.)
     col_left, col_center, col_right = st.columns(3)
     
     with col_left:
@@ -401,6 +564,8 @@ def mostrar_dashboard():
             st.dataframe(ultimos_escaneos, width='stretch', hide_index=True)
         else:
             st.info("No hay escaneos registrados")
+    
+    # ... resto del código existente ...
     
     # SECCIÓN ELIMINADA - El resumen por marcas ya no aparece aquí
     
