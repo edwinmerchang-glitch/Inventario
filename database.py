@@ -46,17 +46,19 @@ def init_database():
     )
     ''')
 
-    # Tabla de usuarios
+    # Tabla de usuarios - MODIFICADA para incluir password y activo
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
         nombre TEXT,
-        rol TEXT DEFAULT 'inventario'
+        password TEXT,
+        rol TEXT DEFAULT 'inventario',
+        activo INTEGER DEFAULT 1
     )
     ''')
 
-    # Tabla de marcas (nueva)
+    # Tabla de marcas
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS marcas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,10 +67,15 @@ def init_database():
     )
     ''')
 
-    # Insertar usuario admin por defecto
-    cursor.execute("INSERT OR IGNORE INTO usuarios(username, nombre, rol) VALUES('admin', 'Administrador', 'admin')")
+    # Insertar usuario admin por defecto (con password hasheado)
+    import hashlib
+    password_hash = hashlib.sha256("admin123".encode()).hexdigest()
+    cursor.execute(
+        "INSERT OR IGNORE INTO usuarios(username, nombre, password, rol, activo) VALUES(?,?,?,?,?)",
+        ('admin', 'Administrador', password_hash, 'admin', 1)
+    )
 
-    # Insertar marcas por defecto - CORREGIDO: IGNORE en lugar de IGN
+    # Insertar marcas por defecto
     marcas_default = ['GENVEN', 'LETI', 'OTROS', 'SIN MARCA']
     for marca in marcas_default:
         cursor.execute("INSERT OR IGNORE INTO marcas(nombre) VALUES(?)", (marca,))
