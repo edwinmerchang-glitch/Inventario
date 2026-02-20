@@ -339,7 +339,7 @@ def mostrar_sidebar():
 # 1️⃣ PÁGINA: DASHBOARD
 # ======================================================
 def mostrar_dashboard():
-    """Mostrar dashboard principal"""
+    """Mostrar dashboard principal - SIN el resumen por marcas"""
     st.title(f"🏠 Dashboard - Bienvenido {st.session_state.nombre}")
     st.markdown("---")
     
@@ -380,7 +380,7 @@ def mostrar_dashboard():
         st.subheader("📋 Últimos Productos")
         if not stock_df.empty:
             ultimos_productos = stock_df.tail(5)[["codigo", "producto", "marca", "area", "stock_sistema"]]
-            st.dataframe(ultimos_productos, use_container_width=True, hide_index=True)
+            st.dataframe(ultimos_productos, width='stretch', hide_index=True)
         else:
             st.info("No hay productos registrados")
     
@@ -389,7 +389,7 @@ def mostrar_dashboard():
         if not conteos_df.empty:
             ultimos_conteos = conteos_df.tail(5)[["fecha", "producto", "diferencia"]].copy()
             ultimos_conteos["fecha"] = pd.to_datetime(ultimos_conteos["fecha"], errors='coerce').dt.strftime("%H:%M")
-            st.dataframe(ultimos_conteos, use_container_width=True, hide_index=True)
+            st.dataframe(ultimos_conteos, width='stretch', hide_index=True)
         else:
             st.info("No hay conteos registrados")
     
@@ -398,36 +398,11 @@ def mostrar_dashboard():
         if not escaneos_df.empty:
             ultimos_escaneos = escaneos_df.tail(5)[["timestamp", "codigo", "cantidad_escaneada"]].copy()
             ultimos_escaneos["timestamp"] = pd.to_datetime(ultimos_escaneos["timestamp"], errors='coerce').dt.strftime("%H:%M:%S")
-            st.dataframe(ultimos_escaneos, use_container_width=True, hide_index=True)
+            st.dataframe(ultimos_escaneos, width='stretch', hide_index=True)
         else:
             st.info("No hay escaneos registrados")
     
-    # Resumen rápido por marcas
-    st.markdown("---")
-    st.subheader("🏷️ Resumen por Marcas (hoy)")
-    
-    resumen_marcas = db.obtener_resumen_por_marca()
-    if not resumen_marcas.empty:
-        # Formatear para mostrar
-        resumen_marcas['% Avance'] = resumen_marcas['porcentaje_avance'].apply(lambda x: f"{x}%")
-        resumen_marcas['diferencia_neta'] = resumen_marcas['diferencia_neta'].apply(lambda x: f"{x:+,d}")
-        
-        st.dataframe(
-            resumen_marcas[['marca', 'total_productos', 'productos_contados', 
-                           'productos_no_escaneados', '% Avance', 'diferencia_neta']],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                'marca': 'Marca',
-                'total_productos': 'Total Prod.',
-                'productos_contados': 'Contados',
-                'productos_no_escaneados': 'No Escaneados',
-                '% Avance': 'Avance',
-                'diferencia_neta': 'Dif. Neta'
-            }
-        )
-    else:
-        st.info("No hay datos de marcas disponibles")
+    # SECCIÓN ELIMINADA - El resumen por marcas ya no aparece aquí
     
     if tiene_permiso("inventario"):
         st.markdown("---")
