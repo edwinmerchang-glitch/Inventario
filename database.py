@@ -390,3 +390,75 @@ def obtener_detalle_productos_por_marca(marca, solo_no_escaneados=False):
         print(f"Error en obtener_detalle_productos_por_marca: {e}")
         conn.close()
         return pd.DataFrame()
+
+def obtener_estadisticas_marca(marca):
+    """Obtener estadísticas detalladas de una marca específica"""
+    conn = get_connection()
+    
+    query = '''
+        SELECT 
+            COUNT(*) as total_productos,
+            COALESCE(SUM(stock_sistema), 0) as stock_total,
+            COUNT(ch.codigo_producto) as productos_contados,
+            COUNT(*) - COUNT(ch.codigo_producto) as productos_no_contados,
+            COALESCE(SUM(ch.total_contado), 0) as total_contado,
+            SUM(CASE WHEN ch.dif_total = 0 THEN 1 ELSE 0 END) as exactos,
+            SUM(CASE WHEN ch.dif_total > 0 AND ch.dif_total <= 2 THEN 1 ELSE 0 END) as sobrantes_leves,
+            SUM(CASE WHEN ch.dif_total < 0 AND ch.dif_total >= -2 THEN 1 ELSE 0 END) as faltantes_leves,
+            SUM(CASE WHEN ABS(ch.dif_total) > 2 THEN 1 ELSE 0 END) as diferencias_criticas,
+            COALESCE(SUM(ch.dif_total), 0) - SUM(CASE WHEN ch.codigo_producto IS NULL THEN stock_sistema ELSE 0 END) as diferencia_neta
+        FROM productos p
+        LEFT JOIN (
+            SELECT codigo_producto, 
+                   SUM(conteo_fisico) as total_contado,
+                   SUM(diferencia) as dif_total
+            FROM conteos
+            WHERE DATE(fecha) = DATE('now')
+            GROUP BY codigo_producto
+        ) ch ON p.codigo = ch.codigo_producto
+        WHERE p.activo = 1 AND COALESCE(p.marca, 'SIN MARCA') = ?
+        GROUP BY COALESCE(p.marca, 'SIN MARCA')
+    '''
+    
+    try:
+        df = pd.read_sql_query(query, conn, params=[marca])
+        conn.close()
+        
+        if not df.empty:
+            # Convertir a diccionario y asegurar tipos
+            stats = df.iloc[0].to_dict()
+            for key in stats:
+                if pd.isna(stats[key]):
+                    stats[key] = 0
+                elif isinstance(stats[key], (int, float)):
+                    stats[key] = int(stats[key])
+            return stats
+        else:
+            # Si no hay datos, devolver estadísticas por defecto
+            return {
+                'total_productos': 0,
+                'stock_total': 0,
+                'productos_contados': 0,
+                'productos_no_contados': 0,
+                'total_contado': 0,
+                'exactos': 0,
+                'sobrantes_leves': 0,
+                'faltantes_leves': 0,
+                'diferencias_criticas': 0,
+                'diferencia_neta': 0
+            }
+    except Exception as e:
+        print(f"Error en obtener_estadisticas_marca: {e}")
+        conn.close()
+        return {
+            'total_productos': 0,
+            'stock_total': 0,
+            'productos_contados': 0,
+            'productos_no_contados': 0,
+            'total_contado': 0,
+            'exactos': 0,
+            'sobrantes_leves': 0,
+            'faltantes_leves': 0,
+            'diferencias_criticas': 0,
+            'diferencia_neta': 0
+        }
