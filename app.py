@@ -1138,7 +1138,7 @@ def mostrar_reportes():
         mostrar_historial_completo()
 
 def mostrar_resumen_general():
-    """Mostrar resumen general de conteos - TODAS LAS MÉTRICAS AL FINAL"""
+    """Mostrar resumen general de conteos - CON EXPANDER DE DIFERENCIAS DEBAJO DE LA TABLA"""
     conteos_df = cargar_conteos()
     escaneos_df = cargar_escaneos_detallados()
     
@@ -1201,13 +1201,31 @@ def mostrar_resumen_general():
         
         st.caption(f"📊 Mostrando {len(resumen_precision)} productos escaneados")
         
+        # ==============================================
+        # EXPANDER: VER SOLO PRODUCTOS CON DIFERENCIAS (JUSTO DEBAJO DE LA TABLA)
+        # ==============================================
+        with st.expander("🔍 Ver solo productos con diferencias"):
+            productos_con_diferencia = resumen_precision[resumen_precision['diferencia'] != 0].copy()
+            if not productos_con_diferencia.empty:
+                st.dataframe(
+                    productos_con_diferencia[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
+                    width='stretch',
+                    hide_index=True,
+                    column_config={
+                        'diferencia': st.column_config.NumberColumn(format="%+d")
+                    }
+                )
+                st.caption(f"📊 Mostrando {len(productos_con_diferencia)} productos con diferencias")
+            else:
+                st.success("🎉 ¡Todos los productos tienen conteos exactos! No hay diferencias.")
+        
         st.markdown("---")
     else:
         st.info("📭 No hay productos escaneados")
         st.markdown("---")
     
     # ==============================================
-    # SECCIÓN 2: MÉTRICAS PRINCIPALES (AHORA EN MEDIO)
+    # SECCIÓN 2: MÉTRICAS PRINCIPALES
     # ==============================================
     st.subheader("📈 Métricas Principales")
     
@@ -1279,39 +1297,28 @@ def mostrar_resumen_general():
             st.metric("📊 Diferencia neta", f"{diferencia_neta:+,d}",
                      help="Suma total de todas las diferencias (positivas y negativas)")
         
-        # Resumen visual adicional
-        with st.expander("📊 Ver resumen detallado"):
+        # Resumen visual adicional (opcional)
+        with st.expander("📊 Ver resumen estadístico detallado"):
             col_res1, col_res2 = st.columns(2)
             
             with col_res1:
-                st.write("**Productos con diferencias:**")
-                st.write(f"• Sobrantes (positivas): {sobrantes}")
-                st.write(f"• Faltantes (negativas): {faltantes}")
-                st.write(f"• Total con diferencias: {sobrantes + faltantes}")
+                st.write("**Distribución de productos:**")
+                st.write(f"• Exactos: {exactos} ({(exactos/total_productos*100):.1f}%)")
+                st.write(f"• Sobrantes: {sobrantes} ({(sobrantes/total_productos*100):.1f}%)")
+                st.write(f"• Faltantes: {faltantes} ({(faltantes/total_productos*100):.1f}%)")
             
             with col_res2:
                 st.write("**Magnitud de diferencias:**")
                 if sobrantes > 0:
                     promedio_sobrante = resumen_precision[resumen_precision['diferencia'] > 0]['diferencia'].mean()
-                    st.write(f"• Promedio sobrante: +{promedio_sobrante:.1f} unidades")
+                    max_sobrante = resumen_precision[resumen_precision['diferencia'] > 0]['diferencia'].max()
+                    st.write(f"• Promedio sobrante: +{promedio_sobrante:.1f}")
+                    st.write(f"• Máximo sobrante: +{max_sobrante}")
                 if faltantes > 0:
                     promedio_faltante = abs(resumen_precision[resumen_precision['diferencia'] < 0]['diferencia'].mean())
-                    st.write(f"• Promedio faltante: -{promedio_faltante:.1f} unidades")
-        
-        # Mostrar solo productos con diferencias (opcional)
-        with st.expander("🔍 Ver solo productos con diferencias"):
-            productos_con_diferencia = resumen_precision[resumen_precision['diferencia'] != 0].copy()
-            if not productos_con_diferencia.empty:
-                st.dataframe(
-                    productos_con_diferencia[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
-                    width='stretch',
-                    hide_index=True,
-                    column_config={
-                        'diferencia': st.column_config.NumberColumn(format="%+d")
-                    }
-                )
-            else:
-                st.info("🎉 ¡Todos los productos tienen conteos exactos!")
+                    max_faltante = abs(resumen_precision[resumen_precision['diferencia'] < 0]['diferencia'].min())
+                    st.write(f"• Promedio faltante: -{promedio_faltante:.1f}")
+                    st.write(f"• Máximo faltante: -{max_faltante}")
     
     else:
         # Si no hay datos suficientes
