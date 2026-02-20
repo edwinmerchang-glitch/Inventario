@@ -91,9 +91,9 @@ def init_database():
         VALUES (?, ?, ?)
     ''', ('admin', 'Administrador', 'admin'))
     
-    # Índices para mejor performance
+    # Índices para mejor performance - CORREGIDO: cambiado NULLS NOT EXISTS por IF NOT EXISTS
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_area ON productos(area)')
-    cursor.execute('CREATE INDEX IF NULLS NOT EXISTS idx_productos_marca ON productos(marca)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_productos_marca ON productos(marca)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_conteos_fecha ON conteos(fecha)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_conteos_usuario ON conteos(usuario)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_conteos_marca ON conteos(marca)')
