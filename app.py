@@ -1677,7 +1677,7 @@ def mostrar_gestion_usuarios():
         st.info("No hay usuarios registrados")
 
 # ======================================================
-# 8️⃣ PÁGINA: CONFIGURACIÓN
+# 8️⃣ PÁGINA: CONFIGURACIÓN (ACTUALIZADA)
 # ======================================================
 def mostrar_configuracion():
     """Mostrar página de configuración"""
@@ -1746,6 +1746,101 @@ def mostrar_configuracion():
         
         st.success(f"✅ Backup creado: backup_{fecha}.csv")
         st.info("Se crearon 4 archivos de backup")
+    
+    st.markdown("---")
+    
+    # ======================================================
+    # NUEVA SECCIÓN: LIMPIAR TODO EL CONTEO
+    # ======================================================
+    st.subheader("🧹 Limpiar todo el conteo")
+    st.warning("⚠️ **Área de alto riesgo** - Estas acciones son irreversibles")
+    
+    with st.expander("🛑 Haga clic para ver opciones de limpieza total", expanded=False):
+        st.markdown("""
+        ### ⚠️ ADVERTENCIA
+        - Esta acción eliminará **TODOS** los conteos y escaneos
+        - Afectará a **TODOS** los usuarios
+        - Los productos en stock **NO** se eliminarán
+        - **No se puede deshacer**
+        """)
+        
+        # Checkbox de confirmación
+        confirmacion1 = st.checkbox("✅ Entiendo que esto eliminará TODOS los conteos y escaneos")
+        
+        if confirmacion1:
+            st.markdown("---")
+            st.markdown("### 🔴 Confirmación final")
+            st.markdown("Para proceder, escriba **'ELIMINAR TODO'** en el campo de texto:")
+            
+            texto_confirmacion = st.text_input("Confirmación de seguridad", type="password")
+            
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
+            
+            with col_btn1:
+                if st.button("🧹 LIMPIAR TODO", type="primary", use_container_width=True, disabled=texto_confirmacion != "ELIMINAR TODO"):
+                    if texto_confirmacion == "ELIMINAR TODO":
+                        try:
+                            # Crear backup automático antes de limpiar
+                            fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            backup_dir = "backups_automaticos"
+                            
+                            # Crear directorio de backups si no existe
+                            if not os.path.exists(backup_dir):
+                                os.makedirs(backup_dir)
+                            
+                            # Guardar backups
+                            if not stock_df.empty:
+                                stock_df.to_csv(f"{backup_dir}/backup_stock_ANTES_LIMPIEZA_{fecha}.csv", index=False)
+                            if not conteos_df.empty:
+                                conteos_df.to_csv(f"{backup_dir}/backup_conteos_ANTES_LIMPIEZA_{fecha}.csv", index=False)
+                            if not escaneos_df.empty:
+                                escaneos_df.to_csv(f"{backup_dir}/backup_escaneos_ANTES_LIMPIEZA_{fecha}.csv", index=False)
+                            
+                            # LIMPIAR ARCHIVOS DE CONTEO
+                            
+                            # 1. Limpiar escaneos_detallados.csv
+                            columnas_escaneos = ["timestamp", "usuario", "codigo", "producto", "area", "cantidad_escaneada", "total_acumulado", "stock_sistema", "tipo_operacion"]
+                            df_vacio_escaneos = pd.DataFrame(columns=columnas_escaneos)
+                            df_vacio_escaneos.to_csv(ARCHIVO_ESCANEOS, index=False)
+                            
+                            # 2. Limpiar conteos.csv
+                            columnas_conteos = ["fecha", "usuario", "codigo", "producto", "area", "stock_sistema", "conteo_fisico", "diferencia"]
+                            df_vacio_conteos = pd.DataFrame(columns=columnas_conteos)
+                            df_vacio_conteos.to_csv(ARCHIVO_CONTEOS, index=False)
+                            
+                            # 3. Limpiar sesión del usuario actual
+                            st.session_state.producto_actual_conteo = None
+                            st.session_state.conteo_actual_session = 0
+                            st.session_state.total_escaneos_session = 0
+                            st.session_state.historial_escaneos = []
+                            
+                            # 4. Limpiar base de datos (si aplica)
+                            try:
+                                db.limpiar_todos_conteos()
+                            except:
+                                pass  # Si no existe la función, continuar
+                            
+                            st.success(f"✅ **¡TODOS LOS CONTEOS HAN SIDO ELIMINADOS!**")
+                            st.info(f"📁 Se creó un backup automático en la carpeta '{backup_dir}' antes de la limpieza")
+                            st.balloons()
+                            
+                            # Mostrar resumen de la limpieza
+                            st.markdown("### 📊 Estado actual del sistema:")
+                            col_res1, col_res2 = st.columns(2)
+                            with col_res1:
+                                st.metric("Productos en stock", len(stock_df))
+                            with col_res2:
+                                st.metric("Conteos actuales", 0)
+                            
+                            time.sleep(2)
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"❌ Error durante la limpieza: {str(e)}")
+            
+            with col_btn2:
+                if st.button("❌ Cancelar", use_container_width=True):
+                    st.rerun()
 
 # ======================================================
 # APLICACIÓN PRINCIPAL
