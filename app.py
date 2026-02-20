@@ -553,7 +553,7 @@ def mostrar_carga_stock():
 # 3️⃣ PÁGINA: IMPORTAR DESDE EXCEL (MODIFICADA)
 # ======================================================
 def mostrar_importar_excel():
-    """Mostrar página de importación desde Excel"""
+    """Mostrar página de importación desde Excel - VERSIÓN OPTIMIZADA"""
     if not tiene_permiso("admin"):
         st.error("⛔ No tienes permisos para acceder a esta sección")
         st.info("Solo administradores pueden importar desde Excel")
@@ -568,7 +568,7 @@ def mostrar_importar_excel():
         
         1. **codigo** - Código único del producto
         2. **producto** - Nombre del producto
-        3. **marca** - Marca del producto (opcional, si no se especifica se usará 'SIN MARCA')
+        3. **marca** - Marca del producto (opcional)
         4. **area** - Área de ubicación
         5. **stock_sistema** - Cantidad en sistema
         """)
@@ -591,15 +591,21 @@ def mostrar_importar_excel():
     
     if archivo is not None:
         try:
-            df_excel = pd.read_excel(archivo, dtype=str)
+            with st.spinner("📊 Procesando archivo..."):
+                # Leer solo las columnas necesarias para ser más rápido
+                df_excel = pd.read_excel(archivo, dtype=str, usecols=lambda x: x.lower() in ['codigo', 'producto', 'marca', 'area', 'stock_sistema'])
             
             st.success(f"✅ Archivo cargado: {archivo.name}")
             
             with st.expander("👁️ Vista previa", expanded=True):
                 st.dataframe(df_excel.head(10), use_container_width=True)
             
+            # Verificar columnas requeridas
             columnas_requeridas = {"codigo", "producto", "area", "stock_sistema"}
-            columnas_encontradas = set(df_excel.columns)
+            columnas_encontradas = set(df_excel.columns.str.lower() if hasattr(df_excel.columns, 'str') else set(df_excel.columns))
+            
+            # Normalizar nombres de columnas
+            df_excel.columns = df_excel.columns.str.lower() if hasattr(df_excel.columns, 'str') else df_excel.columns
             
             if columnas_requeridas.issubset(columnas_encontradas):
                 st.success("✅ Columnas verificadas correctamente")
@@ -609,31 +615,70 @@ def mostrar_importar_excel():
                     df_excel['marca'] = 'SIN MARCA'
                     st.info("ℹ️ No se encontró columna 'marca'. Se usará 'SIN MARCA' por defecto.")
                 
-                if st.button("🚀 Importar datos", type="primary", use_container_width=True):
-                    with st.spinner("Importando..."):
-                        df_excel["codigo"] = df_excel["codigo"].apply(limpiar_codigo)
-                        df_excel["stock_sistema"] = pd.to_numeric(df_excel["stock_sistema"], errors='coerce').fillna(0).astype(int)
+                total_registros = len(df_excel)
+                st.info(f"📊 Total de registros a importar: {total_registros}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🚀 Importar datos (Rápido)", type="primary", use_container_width=True):
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
                         
-                        # Guardar cada producto en la base de datos
-                        for _, row in df_excel.iterrows():
-                            db.guardar_producto(
-                                row["codigo"],
-                                row["producto"],
-                                row["marca"],
-                                row["area"],
-                                row["stock_sistema"]
-                            )
+                        try:
+                            # Preparar datos
+                            status_text.text("Preparando datos...")
                             
-                            # Crear marca si no existe
-                            db.crear_marca(row["marca"])
-                        
-                        st.success(f"✅ {len(df_excel)} productos importados correctamente")
-                        st.balloons()
+                            # Limpiar códigos y convertir stock
+                            df_excel["codigo"] = df_excel["codigo"].apply(limpiar_codigo)
+                            df_excel["stock_sistema"] = pd.to_numeric(df_excel["stock_sistema"], errors='coerce').fillna(0).astype(int)
+                            
+                            # Crear lista de productos para batch insert
+                            productos_batch = []
+                            marcas_unicas = set()
+                            
+                            for idx, row in df_excel.iterrows():
+                                productos_batch.append({
+                                    'codigo': row["codigo"],
+                                    'producto': row["producto"],
+                                    'marca': row["marca"],
+                                    'area': row["area"],
+                                    'stock_sistema': row["stock_sistema"]
+                                })
+                                marcas_unicas.add(row["marca"])
+                                
+                                # Actualizar progreso cada 100 registros
+                                if idx % 100 == 0:
+                                    progress = (idx + 1) / total_registros
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"Procesando {idx + 1} de {total_registros}...")
+                            
+                            # Guardar en batch
+                            status_text.text("Guardando en base de datos...")
+                            db.guardar_productos_batch(productos_batch)
+                            
+                            # Crear marcas nuevas
+                            status_text.text("Registrando marcas...")
+                            for marca in marcas_unicas:
+                                db.crear_marca(marca)
+                            
+                            progress_bar.progress(1.0)
+                            status_text.text("¡Importación completada!")
+                            
+                            st.success(f"✅ {total_registros} productos importados correctamente")
+                            st.balloons()
+                            
+                        except Exception as e:
+                            st.error(f"❌ Error durante la importación: {str(e)}")
+                
+                with col2:
+                    if st.button("📋 Ver muestra de datos", use_container_width=True):
+                        st.dataframe(df_excel.head(20), use_container_width=True)
             else:
                 st.error(f"❌ Faltan columnas requeridas. Necesitas: {columnas_requeridas}")
+                st.write("Columnas encontradas:", list(columnas_encontradas))
                 
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f"❌ Error al leer el archivo: {str(e)}")
 
 # ======================================================
 # 4️⃣ PÁGINA: CONTEO FÍSICO (MODIFICADA PARA MARCAS)
