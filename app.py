@@ -1108,7 +1108,7 @@ def mostrar_conteo_fisico():
                         st.error(f"Error al cargar historial: {e}")
 
 # ======================================================
-# 5️⃣ PÁGINA: REPORTES POR MARCA (CON TABLA GENERAL AL FINAL)
+# 5️⃣ PÁGINA: REPORTES POR MARCA (CON TABLA GENERAL AL FINAL - CORREGIDO)
 # ======================================================
 def mostrar_reportes_marca():
     """Mostrar reportes por marca con tabla general AL FINAL"""
@@ -1247,11 +1247,15 @@ def mostrar_reportes_marca():
                             else:
                                 display_df[col] = ''
                     
-                    # Formatear diferencia como +0
-                    if 'diferencia' in display_df.columns:
-                        display_df['diferencia'] = display_df['diferencia'].apply(
-                            lambda x: f"{int(x):+,d}" if pd.notna(x) else "+0"
-                        )
+                    # Convertir a tipos seguros
+                    for col in ['stock_sistema', 'conteo_fisico', 'diferencia']:
+                        if col in display_df.columns:
+                            display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0).astype(int)
+                    
+                    # Formatear diferencia como +0 (solo para visualización)
+                    display_df['diferencia_display'] = display_df['diferencia'].apply(
+                        lambda x: f"{int(x):+,d}"
+                    )
                     
                     # Mapear estados
                     estado_map = {
@@ -1264,14 +1268,14 @@ def mostrar_reportes_marca():
                     }
                     
                     if 'estado' in display_df.columns:
-                        display_df['estado_display'] = display_df['estado'].map(estado_map).fillna(display_df['estado'])
+                        display_df['estado_display'] = display_df['estado'].map(estado_map).fillna('NO_ESCANEADO')
                     else:
                         display_df['estado_display'] = 'NO_ESCANEADO'
                     
                     # Mostrar tabla
                     st.dataframe(
                         display_df[['codigo', 'producto', 'area', 'stock_sistema', 
-                                   'conteo_fisico', 'diferencia', 'estado_display']],
+                                   'conteo_fisico', 'diferencia_display', 'estado_display']],
                         width='stretch',
                         hide_index=True,
                         column_config={
@@ -1280,7 +1284,7 @@ def mostrar_reportes_marca():
                             'area': 'Área',
                             'stock_sistema': 'Stock Sistema',
                             'conteo_fisico': 'Conteo',
-                            'diferencia': 'Diferencia',
+                            'diferencia_display': 'Diferencia',
                             'estado_display': 'Estado'
                         }
                     )
@@ -1291,7 +1295,11 @@ def mostrar_reportes_marca():
                     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 3])
                     with col_btn1:
                         if st.button("📥 Exportar CSV", use_container_width=True):
-                            csv = display_df.to_csv(index=False).encode('utf-8')
+                            # Para exportar, usar valores originales
+                            export_df = display_df[['codigo', 'producto', 'area', 'stock_sistema', 
+                                                   'conteo_fisico', 'diferencia', 'estado_display']].copy()
+                            export_df['diferencia'] = export_df['diferencia'].apply(lambda x: f"{int(x):+,d}")
+                            csv = export_df.to_csv(index=False).encode('utf-8')
                             st.download_button(
                                 "⬇️ Descargar",
                                 data=csv,
@@ -1320,36 +1328,35 @@ def mostrar_reportes_marca():
                 # Preparar dataframe para mostrar
                 resumen_display = resumen_marcas.copy()
                 
-                # Asegurar columnas necesarias
-                columnas_resumen = {
-                    'marca': 'Marca',
-                    'total_productos': 'Total Prod.',
-                    'productos_contados': 'Contados',
-                    'productos_no_escaneados': 'No Escaneados',
-                    'porcentaje_avance': 'Avance',
-                    'stock_total_sistema': 'Stock Sistema',
-                    'total_contado': 'Total Contado',
-                    'diferencia_neta': 'Dif. Neta'
-                }
+                # Asegurar que todas las columnas existen y tienen tipos correctos
+                columnas_numericas = [
+                    'total_productos', 'productos_contados', 'productos_no_escaneados',
+                    'stock_total_sistema', 'total_contado', 'diferencia_neta'
+                ]
                 
-                # Crear columnas si no existen
-                for col in columnas_resumen.keys():
-                    if col not in resumen_display.columns:
-                        if col == 'diferencia_neta':
-                            resumen_display[col] = 0
-                        elif col == 'porcentaje_avance':
-                            resumen_display[col] = 0.0
-                        elif col in ['total_productos', 'productos_contados', 'productos_no_escaneados', 
-                                   'stock_total_sistema', 'total_contado']:
-                            resumen_display[col] = 0
+                for col in columnas_numericas:
+                    if col in resumen_display.columns:
+                        resumen_display[col] = pd.to_numeric(resumen_display[col], errors='coerce').fillna(0)
+                    else:
+                        resumen_display[col] = 0
                 
-                # Formatear valores
-                resumen_display['porcentaje_avance'] = resumen_display['porcentaje_avance'].apply(
-                    lambda x: f"{x:.1f}%" if pd.notna(x) else "0.0%"
+                # Asegurar columna de porcentaje
+                if 'porcentaje_avance' in resumen_display.columns:
+                    resumen_display['porcentaje_avance'] = pd.to_numeric(resumen_display['porcentaje_avance'], errors='coerce').fillna(0.0)
+                else:
+                    resumen_display['porcentaje_avance'] = 0.0
+                
+                # Asegurar que 'marca' es string
+                if 'marca' in resumen_display.columns:
+                    resumen_display['marca'] = resumen_display['marca'].astype(str)
+                
+                # Formatear para visualización
+                resumen_display['avance_display'] = resumen_display['porcentaje_avance'].apply(
+                    lambda x: f"{float(x):.1f}%" if pd.notna(x) else "0.0%"
                 )
                 
-                resumen_display['diferencia_neta'] = resumen_display['diferencia_neta'].apply(
-                    lambda x: f"{int(x):+,d}" if pd.notna(x) else "+0"
+                resumen_display['diferencia_display'] = resumen_display['diferencia_neta'].apply(
+                    lambda x: f"{int(float(x)):+,d}" if pd.notna(x) else "+0"
                 )
                 
                 # Ordenar por marca
@@ -1359,8 +1366,8 @@ def mostrar_reportes_marca():
                 st.dataframe(
                     resumen_display[[
                         'marca', 'total_productos', 'productos_contados', 
-                        'productos_no_escaneados', 'porcentaje_avance', 
-                        'stock_total_sistema', 'total_contado', 'diferencia_neta'
+                        'productos_no_escaneados', 'avance_display', 
+                        'stock_total_sistema', 'total_contado', 'diferencia_display'
                     ]],
                     width='stretch',
                     hide_index=True,
@@ -1369,47 +1376,60 @@ def mostrar_reportes_marca():
                         'total_productos': 'Total Prod.',
                         'productos_contados': 'Contados',
                         'productos_no_escaneados': 'No Escaneados',
-                        'porcentaje_avance': 'Avance',
+                        'avance_display': 'Avance',
                         'stock_total_sistema': 'Stock Sistema',
                         'total_contado': 'Total Contado',
-                        'diferencia_neta': 'Dif. Neta'
+                        'diferencia_display': 'Dif. Neta'
                     }
                 )
                 
-                # Estadísticas generales
-                col_total1, col_total2, col_total3 = st.columns(3)
-                
-                with col_total1:
-                    total_productos_gral = resumen_display['total_productos'].sum() if 'total_productos' in resumen_display.columns else 0
-                    st.metric("📦 Total Productos", total_productos_gral)
-                
-                with col_total2:
-                    total_contado_gral = resumen_display['total_contado'].str.replace('+', '').str.replace('-', '').astype(float).sum() if 'total_contado' in resumen_display.columns else 0
-                    st.metric("📊 Total Unidades Contadas", int(total_contado_gral))
-                
-                with col_total3:
+                # Estadísticas generales (convertir a valores numéricos seguros)
+                try:
+                    total_productos_gral = int(resumen_display['total_productos'].sum())
+                    
+                    # Convertir total_contado a numérico
+                    if 'total_contado' in resumen_display.columns:
+                        total_contado_gral = int(pd.to_numeric(resumen_display['total_contado'], errors='coerce').sum())
+                    else:
+                        total_contado_gral = 0
+                    
                     # Calcular diferencia neta total
-                    dif_neta_total = 0
                     if 'diferencia_neta' in resumen_display.columns:
-                        for val in resumen_display['diferencia_neta']:
-                            try:
-                                if isinstance(val, str):
-                                    dif_neta_total += int(val.replace('+', '').replace('-', '')) * (-1 if '-' in val else 1)
-                                else:
-                                    dif_neta_total += val
-                            except:
-                                pass
-                    st.metric("⚖️ Diferencia Neta Total", f"{dif_neta_total:+,d}")
+                        dif_neta_total = int(pd.to_numeric(resumen_display['diferencia_neta'], errors='coerce').sum())
+                    else:
+                        dif_neta_total = 0
+                    
+                    col_total1, col_total2, col_total3 = st.columns(3)
+                    
+                    with col_total1:
+                        st.metric("📦 Total Productos", total_productos_gral)
+                    
+                    with col_total2:
+                        st.metric("📊 Total Unidades Contadas", total_contado_gral)
+                    
+                    with col_total3:
+                        st.metric("⚖️ Diferencia Neta Total", f"{dif_neta_total:+,d}")
+                    
+                except Exception as e:
+                    st.warning(f"Error calculando estadísticas generales: {e}")
                 
                 # Botón para exportar resumen general
                 if st.button("📥 Exportar Resumen General a CSV", use_container_width=True):
-                    csv = resumen_display.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        "⬇️ Descargar Resumen General",
-                        data=csv,
-                        file_name=f"resumen_marcas_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv"
-                    )
+                    try:
+                        export_df = resumen_display[['marca', 'total_productos', 'productos_contados', 
+                                                    'productos_no_escaneados', 'porcentaje_avance', 
+                                                    'stock_total_sistema', 'total_contado', 'diferencia_neta']].copy()
+                        export_df['porcentaje_avance'] = export_df['porcentaje_avance'].apply(lambda x: f"{float(x):.1f}%")
+                        export_df['diferencia_neta'] = export_df['diferencia_neta'].apply(lambda x: f"{int(float(x)):+,d}")
+                        csv = export_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            "⬇️ Descargar Resumen General",
+                            data=csv,
+                            file_name=f"resumen_marcas_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv"
+                        )
+                    except Exception as e:
+                        st.error(f"Error al exportar: {e}")
             else:
                 st.info("No hay datos de resumen por marcas disponibles")
                 
