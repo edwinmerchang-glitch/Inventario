@@ -1082,15 +1082,17 @@ def mostrar_conteo_fisico():
                 time.sleep(0.5)
                 st.rerun()
 
-    # --- Botones de acción ---
+    # --- Botones de acción con NUEVO BOTÓN DE LIMPIAR ---
     if st.session_state.producto_actual_conteo:
         st.markdown("---")
-        col_acc1, col_acc2 = st.columns(2)
+        col_acc1, col_acc2, col_acc3 = st.columns(3)  # Cambiamos a 3 columnas para el nuevo botón
+        
         with col_acc1:
             if st.button("🔄 Cambiar producto", use_container_width=True):
                 st.session_state.producto_actual_conteo = None
                 st.session_state.conteo_actual_session = 0
                 st.rerun()
+        
         with col_acc2:
             if st.button("📋 Ver historial", use_container_width=True):
                 if os.path.exists(ARCHIVO_ESCANEOS):
@@ -1106,6 +1108,63 @@ def mostrar_conteo_fisico():
                                 st.dataframe(historial[['timestamp', 'cantidad_escaneada', 'total_acumulado']])
                     except Exception as e:
                         st.error(f"Error al cargar historial: {e}")
+        
+        with col_acc3:
+            # Botón de limpiar conteo actual
+            if st.button("🧹 Limpiar conteo actual", type="primary", use_container_width=True):
+                # Verificar si hay algo que limpiar
+                if st.session_state.conteo_actual_session > 0:
+                    st.session_state.mostrar_confirmacion_limpieza = True
+                else:
+                    st.info("El conteo ya está en 0")
+        
+        # Mostrar confirmación de limpieza si es necesario
+        if st.session_state.get('mostrar_confirmacion_limpieza', False):
+            st.warning(f"⚠️ Esto reiniciará el conteo de **{st.session_state.producto_actual_conteo['nombre']}** de {st.session_state.conteo_actual_session} a 0")
+            
+            col_conf1, col_conf2 = st.columns(2)
+            with col_conf1:
+                if st.button("✅ Sí, reiniciar", key="confirm_si_limpiar"):
+                    # Eliminar escaneos del producto actual para hoy
+                    if os.path.exists(ARCHIVO_ESCANEOS):
+                        df_temp = pd.read_csv(ARCHIVO_ESCANEOS)
+                        if not df_temp.empty:
+                            # Filtrar para excluir los escaneos de hoy de este producto
+                            hoy = datetime.now().strftime("%Y-%m-%d")
+                            df_temp['fecha'] = pd.to_datetime(df_temp['timestamp']).dt.strftime('%Y-%m-%d')
+                            mask = ~((df_temp['fecha'] == hoy) & 
+                                    (df_temp['usuario'] == usuario_actual) & 
+                                    (df_temp['codigo'].astype(str) == str(st.session_state.producto_actual_conteo['codigo'])))
+                            df_temp_filtrado = df_temp[mask]
+                            
+                            # Eliminar columna fecha antes de guardar
+                            if 'fecha' in df_temp_filtrado.columns:
+                                df_temp_filtrado = df_temp_filtrado.drop('fecha', axis=1)
+                            
+                            df_temp_filtrado.to_csv(ARCHIVO_ESCANEOS, index=False)
+                            
+                            # Actualizar sesión
+                            st.session_state.conteo_actual_session = 0
+                            
+                            # Actualizar resumen de conteos (eliminar registro)
+                            conteos_df = cargar_conteos()
+                            if not conteos_df.empty:
+                                hoy = datetime.now().strftime("%Y-%m-%d")
+                                mask_conteos = ~((conteos_df["usuario"] == usuario_actual) & 
+                                               (conteos_df["codigo"] == str(st.session_state.producto_actual_conteo['codigo'])) & 
+                                               (conteos_df["fecha"].str.startswith(hoy)))
+                                conteos_df = conteos_df[mask_conteos]
+                                guardar_conteos(conteos_df)
+                            
+                            st.session_state.mostrar_confirmacion_limpieza = False
+                            st.success("✅ Conteo reiniciado exitosamente")
+                            time.sleep(1)
+                            st.rerun()
+            
+            with col_conf2:
+                if st.button("❌ Cancelar", key="confirm_no_limpiar"):
+                    st.session_state.mostrar_confirmacion_limpieza = False
+                    st.rerun()
 
 # ======================================================
 # 5️⃣ PÁGINA: REPORTES POR MARCA (CON TABLA GENERAL AL FINAL - CORREGIDO)
