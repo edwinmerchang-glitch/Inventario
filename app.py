@@ -599,48 +599,35 @@ def mostrar_conteo_fisico():
                     st.dataframe(historial[['timestamp', 'cantidad_escaneada', 'total_acumulado', 'diferencia']].head(10))
 
 # ======================================================
-# 5️⃣ PÁGINA: REPORTE POR MARCAS
+# 5️⃣ PÁGINA: REPORTE POR MARCAS (ORDEN CAMBIADO)
 # ======================================================
 def mostrar_reportes_marca():
-    """Mostrar reportes detallados por marca"""
+    """Mostrar reportes detallados por marca - PRIMERO DETALLE, LUEGO RESUMEN"""
     st.title("🏷️ Reporte por Marcas")
     st.markdown("---")
     
     try:
+        # Obtener resumen de marcas para el selector
         resumen_marcas = db.obtener_resumen_por_marca()
         
         if resumen_marcas.empty:
             st.warning("No hay datos de marcas disponibles")
             return
         
-        st.subheader("📊 Resumen General por Marcas")
-        
-        st.dataframe(
-            resumen_marcas,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                'marca': 'Marca',
-                'total_productos': 'Total Prod.',
-                'productos_contados': 'Contados',
-                'productos_no_escaneados': 'No Escaneados',
-                'porcentaje_avance': st.column_config.NumberColumn('Avance', format="%.1f%%"),
-                'stock_total_sistema': 'Stock Sistema',
-                'total_contado': 'Total Contado',
-                'diferencia_neta': st.column_config.NumberColumn('Dif. Neta', format="%+d")
-            }
-        )
-        
-        st.markdown("---")
-        
+        # Selector de marca (siempre visible)
         marcas = resumen_marcas['marca'].tolist()
         if marcas:
             marca_seleccionada = st.selectbox("🔍 Seleccionar marca para ver detalle", marcas)
             
             if marca_seleccionada:
+                # ==============================================
+                # 1️⃣ PRIMERO: DETALLE DE PRODUCTOS
+                # ==============================================
                 st.subheader(f"📋 Detalle de productos - {marca_seleccionada}")
                 
-                solo_no_escaneados = st.checkbox("Mostrar solo productos NO escaneados")
+                col_filtro, _ = st.columns([1, 3])
+                with col_filtro:
+                    solo_no_escaneados = st.checkbox("Mostrar solo productos NO escaneados")
                 
                 detalle = db.obtener_detalle_productos_por_marca(
                     marca_seleccionada, 
@@ -648,51 +635,70 @@ def mostrar_reportes_marca():
                 )
                 
                 if not detalle.empty:
+                    # Estadísticas rápidas de la marca
                     stats = db.obtener_estadisticas_marca(marca_seleccionada)
                     
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    with col1:
-                        st.metric("Total Productos", stats.get('total_productos', 0))
-                    with col2:
-                        st.metric("Productos Contados", stats.get('productos_contados', 0))
-                    with col3:
-                        st.metric("No Escaneados", stats.get('productos_no_contados', 0))
-                    with col4:
-                        st.metric("Stock Total", stats.get('stock_total', 0))
-                    with col5:
-                        st.metric("Diferencia Neta", f"{stats.get('diferencia_neta', 0):+,d}")
+                    # Mostrar métricas en tarjetas pequeñas
+                    col_met1, col_met2, col_met3, col_met4, col_met5 = st.columns(5)
+                    with col_met1:
+                        st.metric("Total Productos", stats.get('total_productos', 0), help="Productos en inventario")
+                    with col_met2:
+                        st.metric("Contados", stats.get('productos_contados', 0), help="Productos escaneados hoy")
+                    with col_met3:
+                        st.metric("No Escaneados", stats.get('productos_no_contados', 0), help="Pendientes de conteo")
+                    with col_met4:
+                        st.metric("Stock Total", stats.get('stock_total', 0), help="Unidades en sistema")
+                    with col_met5:
+                        st.metric("Diferencia Neta", f"{stats.get('diferencia_neta', 0):+,d}", help="Contado - Stock")
                     
-                    st.subheader("📊 Distribución por Estado")
-                    col_graf1, col_graf2, col_graf3 = st.columns(3)
+                    st.markdown("---")
                     
-                    with col_graf1:
-                        st.metric("✅ Exactos", stats.get('exactos', 0))
-                    with col_graf2:
-                        leves = stats.get('sobrantes_leves', 0) + stats.get('faltantes_leves', 0)
-                        st.metric("⚠️ Diferencias Leves", leves)
-                    with col_graf3:
-                        st.metric("🔴 Diferencias Críticas", stats.get('diferencias_criticas', 0))
-                    
-                    st.subheader("📋 Listado de Productos")
-                    
-                    # Función para colorear
+                    # Función para colorear según estado
                     def color_estado(val):
                         if val == 'NO_ESCANEADO':
-                            return 'background-color: #fff3cd'
+                            return 'background-color: #fff3cd'  # Amarillo suave
                         elif val == 'OK':
-                            return 'background-color: #d4edda'
-                        elif val in ['LEVE', 'CRITICA']:
-                            return 'background-color: #f8d7da'
+                            return 'background-color: #d4edda'  # Verde suave
+                        elif val == 'LEVE':
+                            return 'background-color: #fff3cd'  # Amarillo suave
+                        elif val == 'CRITICA':
+                            return 'background-color: #f8d7da'  # Rojo suave
                         return ''
                     
+                    # Preparar dataframe para mostrar
                     detalle_display = detalle.copy()
+                    
+                    # Formatear diferencia con signo
                     if 'diferencia' in detalle_display.columns:
                         detalle_display['diferencia'] = detalle_display['diferencia'].apply(lambda x: f"{x:+,d}")
                     
-                    styled_df = detalle_display.style.applymap(color_estado, subset=['estado'])
-                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                    # Formatear fecha si existe
+                    if 'ultimo_escaneo' in detalle_display.columns:
+                        detalle_display['ultimo_escaneo'] = pd.to_datetime(detalle_display['ultimo_escaneo'], errors='coerce').dt.strftime('%H:%M')
                     
-                    if st.button("📥 Exportar detalle a CSV"):
+                    # Aplicar estilos
+                    styled_df = detalle_display.style.applymap(color_estado, subset=['estado'])
+                    
+                    # Mostrar tabla de productos
+                    st.dataframe(
+                        styled_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            'codigo': 'Código',
+                            'producto': 'Producto',
+                            'area': 'Área',
+                            'stock_sistema': 'Stock Sis.',
+                            'conteo_fisico': 'Conteo',
+                            'diferencia': 'Dif.',
+                            'estado': 'Estado',
+                            'ultimo_escaneo': 'Último',
+                            'ultimo_usuario': 'Usuario'
+                        }
+                    )
+                    
+                    # Botón para exportar detalle
+                    if st.button("📥 Exportar detalle de productos a CSV", use_container_width=True):
                         csv = detalle.to_csv(index=False).encode('utf-8')
                         st.download_button(
                             "⬇️ Descargar CSV",
@@ -702,8 +708,48 @@ def mostrar_reportes_marca():
                         )
                 else:
                     st.info(f"No hay productos para la marca {marca_seleccionada}")
+                
+                st.markdown("---")
+                
+                # ==============================================
+                # 2️⃣ SEGUNDO: RESUMEN GENERAL POR MARCAS
+                # ==============================================
+                st.subheader("📊 Resumen General por Marcas")
+                
+                # Mostrar el resumen de todas las marcas
+                st.dataframe(
+                    resumen_marcas,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'marca': 'Marca',
+                        'total_productos': 'Total Prod.',
+                        'productos_contados': 'Contados',
+                        'productos_no_escaneados': 'No Escaneados',
+                        'porcentaje_avance': st.column_config.NumberColumn('Avance', format="%.1f%%"),
+                        'stock_total_sistema': 'Stock Sistema',
+                        'total_contado': 'Total Contado',
+                        'diferencia_neta': st.column_config.NumberColumn('Dif. Neta', format="%+d")
+                    }
+                )
+                
+                # Estadísticas generales
+                col_total1, col_total2, col_total3 = st.columns(3)
+                with col_total1:
+                    total_productos = resumen_marcas['total_productos'].sum()
+                    st.metric("📦 Total Productos", total_productos)
+                with col_total2:
+                    total_contados = resumen_marcas['productos_contados'].sum()
+                    st.metric("✅ Total Contados", total_contados)
+                with col_total3:
+                    if total_productos > 0:
+                        avance_general = (total_contados / total_productos * 100)
+                        st.metric("📊 Avance General", f"{avance_general:.1f}%")
+        
     except Exception as e:
         st.error(f"Error al cargar reportes: {str(e)}")
+        with st.expander("🔍 Detalles del error"):
+            st.exception(e)
 
 # ======================================================
 # 6️⃣ PÁGINA: REPORTES GENERALES
@@ -713,13 +759,14 @@ def mostrar_reportes():
     st.title("📊 Reportes de Conteo")
     st.markdown("---")
     
-    tab1, tab2, tab3 = st.tabs(["📈 Resumen General", "🏷️ Por Marcas", "📋 Historial Completo"])
+    # Cambié el orden de las pestañas: ahora "Detalle por Marcas" es la primera
+    tab1, tab2, tab3 = st.tabs(["🏷️ Detalle por Marcas", "📈 Resumen General", "📋 Historial Completo"])
     
     with tab1:
-        mostrar_resumen_general()
+        mostrar_reportes_marca()  # Esta ahora muestra detalle + resumen
     
     with tab2:
-        mostrar_reportes_marca()
+        mostrar_resumen_general()
     
     with tab3:
         mostrar_historial_completo()
