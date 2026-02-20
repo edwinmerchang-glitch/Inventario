@@ -946,7 +946,7 @@ def mostrar_conteo_fisico():
 # 5️⃣ PÁGINA: REPORTES POR MARCA (NUEVA)
 # ======================================================
 def mostrar_reportes_marca():
-    """Mostrar reportes detallados por marca - VERSIÓN CORREGIDA"""
+    """Mostrar reportes detallados por marca - CON SELECTOR AL INICIO"""
     st.title("🏷️ Reporte por Marcas")
     st.markdown("---")
     
@@ -958,7 +958,86 @@ def mostrar_reportes_marca():
             st.warning("No hay datos de marcas disponibles")
             return
         
-        # Mostrar resumen general
+        # ==============================================
+        # SECCIÓN 1: SELECTOR DE MARCA (AL INICIO)
+        # ==============================================
+        st.subheader("🔍 Seleccionar marca para ver detalle")
+        
+        marcas = resumen_marcas['marca'].tolist()
+        if marcas:
+            # Agregar opción "Todas las marcas" si se desea
+            opciones_marca = ["Seleccione una marca..."] + marcas
+            marca_seleccionada = st.selectbox(
+                "Selecciona una marca para ver su detalle completo:",
+                opciones_marca,
+                index=0
+            )
+            
+            # Si se seleccionó una marca válida (no es el placeholder)
+            if marca_seleccionada and marca_seleccionada != "Seleccione una marca...":
+                st.markdown("---")
+                st.subheader(f"📋 Detalle de productos - {marca_seleccionada}")
+                
+                # Opciones de filtro para el detalle
+                col_filt1, col_filt2 = st.columns([2, 1])
+                with col_filt1:
+                    solo_no_escaneados = st.checkbox("Mostrar solo productos NO escaneados", key="filtro_no_escaneados")
+                with col_filt2:
+                    if st.button("🔄 Limpiar filtros", use_container_width=True):
+                        solo_no_escaneados = False
+                        st.rerun()
+                
+                # Obtener detalle de productos
+                detalle = db.obtener_detalle_productos_por_marca(
+                    marca_seleccionada, 
+                    solo_no_escaneados=solo_no_escaneados
+                )
+                
+                if not detalle.empty:
+                    # Estadísticas de la marca
+                    stats = db.obtener_estadisticas_marca(marca_seleccionada)
+                    
+                    # Mostrar métricas rápidas de la marca
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("📦 Total Productos", stats.get('total_productos', 0))
+                    with col2:
+                        st.metric("✅ Contados", stats.get('productos_contados', 0))
+                    with col3:
+                        st.metric("⏳ No Escaneados", stats.get('productos_no_contados', 0))
+                    with col4:
+                        st.metric("📊 Stock Total", stats.get('stock_total', 0))
+                    
+                    # Mostrar tabla de productos de la marca
+                    st.dataframe(
+                        detalle[['codigo', 'producto', 'area', 'stock_sistema', 
+                                'conteo_fisico', 'diferencia', 'estado']],
+                        width='stretch',
+                        hide_index=True,
+                        column_config={
+                            'diferencia': st.column_config.NumberColumn(format="%+d")
+                        }
+                    )
+                    
+                    # Botón para exportar detalle de la marca
+                    if st.button(f"📥 Exportar detalle de {marca_seleccionada} a CSV", use_container_width=True):
+                        csv = detalle.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            "⬇️ Descargar CSV",
+                            data=csv,
+                            file_name=f"detalle_{marca_seleccionada}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv"
+                        )
+                else:
+                    st.info(f"No hay productos para la marca {marca_seleccionada}")
+            
+            st.markdown("---")
+        else:
+            st.warning("No hay marcas disponibles")
+        
+        # ==============================================
+        # SECCIÓN 2: RESUMEN GENERAL POR MARCAS (DESPUÉS DEL DETALLE)
+        # ==============================================
         st.subheader("📊 Resumen General por Marcas")
         
         # Formatear para mostrar
@@ -983,6 +1062,7 @@ def mostrar_reportes_marca():
         resumen_display['% Avance'] = resumen_display['porcentaje_avance'].apply(lambda x: f"{x}%")
         resumen_display['diferencia_neta'] = resumen_display['diferencia_neta'].apply(lambda x: f"{x:+,d}")
         
+        # Mostrar tabla resumen
         st.dataframe(
             resumen_display[['marca', 'total_productos', 'productos_contados', 
                             'productos_no_escaneados', '% Avance', 'stock_total_sistema', 
@@ -1001,114 +1081,43 @@ def mostrar_reportes_marca():
             }
         )
         
+        # Botón para exportar resumen general
+        if st.button("📥 Exportar resumen general a CSV", use_container_width=True):
+            csv = resumen_marcas.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                "⬇️ Descargar CSV",
+                data=csv,
+                file_name=f"resumen_marcas_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv"
+            )
+        
         st.markdown("---")
         
-        # Selector de marca para ver detalle
-        marcas = resumen_display['marca'].tolist()
-        if marcas:
-            marca_seleccionada = st.selectbox("🔍 Seleccionar marca para ver detalle", marcas)
+        # ==============================================
+        # SECCIÓN 3: ESTADÍSTICAS GLOBALES (OPCIONAL)
+        # ==============================================
+        with st.expander("📈 Ver estadísticas globales por marcas"):
+            # Calcular totales globales
+            total_productos_global = resumen_marcas['total_productos'].sum()
+            total_contados_global = resumen_marcas['productos_contados'].sum()
+            total_no_escaneados_global = resumen_marcas['productos_no_escaneados'].sum()
             
-            if marca_seleccionada:
-                st.subheader(f"📋 Detalle de productos - {marca_seleccionada}")
-                
-                # Opciones de filtro
-                col_filt1, col_filt2 = st.columns(2)
-                with col_filt1:
-                    solo_no_escaneados = st.checkbox("Mostrar solo productos NO escaneados")
-                
-                # Obtener detalle de productos
-                detalle = db.obtener_detalle_productos_por_marca(
-                    marca_seleccionada, 
-                    solo_no_escaneados=solo_no_escaneados
-                )
-                
-                if not detalle.empty:
-                    # Estadísticas de la marca
-                    stats = db.obtener_estadisticas_marca(marca_seleccionada)
-                    
-                    # Mostrar métricas
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    with col1:
-                        st.metric("Total Productos", stats.get('total_productos', 0))
-                    with col2:
-                        st.metric("Productos Contados", stats.get('productos_contados', 0))
-                    with col3:
-                        st.metric("No Escaneados", stats.get('productos_no_contados', 0))
-                    with col4:
-                        st.metric("Stock Total", stats.get('stock_total', 0))
-                    with col5:
-                        st.metric("Diferencia Neta", f"{stats.get('diferencia_neta', 0):+,d}")
-                    
-                    # Gráfico de estado
-                    st.subheader("📊 Distribución por Estado")
-                    col_graf1, col_graf2, col_graf3 = st.columns(3)
-                    
-                    with col_graf1:
-                        st.metric("✅ Exactos", stats.get('exactos', 0))
-                    with col_graf2:
-                        leves = stats.get('sobrantes_leves', 0) + stats.get('faltantes_leves', 0)
-                        st.metric("⚠️ Diferencias Leves", leves)
-                    with col_graf3:
-                        st.metric("🔴 Diferencias Críticas", stats.get('diferencias_criticas', 0))
-                    
-                    # Mostrar tabla de productos
-                    st.subheader("📋 Listado de Productos")
-                    
-                    # Función para colorear según estado
-                    def color_estado(val):
-                        if val == 'NO_ESCANEADO':
-                            return 'background-color: #fff3cd'
-                        elif val == 'OK':
-                            return 'background-color: #d4edda'
-                        elif val in ['LEVE', 'CRITICA']:
-                            return 'background-color: #f8d7da'
-                        return ''
-                    
-                    # Preparar dataframe para mostrar
-                    detalle_display = detalle.copy()
-                    
-                    # Asegurar columnas necesarias
-                    if 'diferencia' in detalle_display.columns:
-                        detalle_display['diferencia'] = detalle_display['diferencia'].apply(lambda x: f"{x:+,d}")
-                    
-                    if 'ultimo_escaneo' in detalle_display.columns and not detalle_display['ultimo_escaneo'].isna().all():
-                        detalle_display['ultimo_escaneo'] = pd.to_datetime(detalle_display['ultimo_escaneo']).dt.strftime('%H:%M %d/%m')
-                    
-                    # Aplicar estilos
-                    if 'estado' in detalle_display.columns:
-                        styled_df = detalle_display.style.applymap(color_estado, subset=['estado'])
-                        st.dataframe(
-                            styled_df,
-                            width='stretch',
-                            hide_index=True,
-                            column_config={
-                                'codigo': 'Código',
-                                'producto': 'Producto',
-                                'area': 'Área',
-                                'stock_sistema': 'Stock Sistema',
-                                'conteo_fisico': 'Conteo',
-                                'diferencia': 'Diferencia',
-                                'estado': 'Estado',
-                                'ultimo_escaneo': 'Último Escaneo',
-                                'ultimo_usuario': 'Usuario'
-                            }
-                        )
-                    else:
-                        st.dataframe(detalle_display, width='stretch', hide_index=True)
-                    
-                    # Botón para exportar
-                    if st.button("📥 Exportar detalle de marca a CSV", width='stretch'):
-                        csv = detalle.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            "⬇️ Descargar CSV",
-                            data=csv,
-                            file_name=f"detalle_{marca_seleccionada}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv"
-                        )
-                else:
-                    st.info(f"No hay productos para la marca {marca_seleccionada}")
-        else:
-            st.warning("No hay marcas disponibles")
+            col_g1, col_g2, col_g3 = st.columns(3)
+            
+            with col_g1:
+                st.metric("🏷️ Total marcas", len(resumen_marcas))
+            
+            with col_g2:
+                st.metric("📦 Total productos", total_productos_global)
+            
+            with col_g3:
+                avance_global = (total_contados_global / total_productos_global * 100) if total_productos_global > 0 else 0
+                st.metric("📊 Avance global", f"{avance_global:.1f}%")
+            
+            # Gráfico de distribución (textual)
+            st.write("**Distribución de productos por marca:**")
+            for _, row in resumen_marcas.iterrows():
+                st.write(f"• {row['marca']}: {row['total_productos']} productos ({row['porcentaje_avance']}% contados)")
             
     except Exception as e:
         st.error(f"Error al cargar reportes por marca: {str(e)}")
