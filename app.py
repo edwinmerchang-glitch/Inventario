@@ -1138,7 +1138,7 @@ def mostrar_reportes():
         mostrar_historial_completo()
 
 def mostrar_resumen_general():
-    """Mostrar resumen general de conteos - VERSIÓN CORREGIDA"""
+    """Mostrar resumen general de conteos - CON SECCIONES REORDENADAS"""
     conteos_df = cargar_conteos()
     escaneos_df = cargar_escaneos_detallados()
     
@@ -1178,12 +1178,12 @@ def mostrar_resumen_general():
     st.markdown("---")
     
     # ==============================================
-    # SECCIÓN 2: ANÁLISIS DE PRECISIÓN (CORREGIDA)
+    # SECCIÓN 2: TABLA DE PRODUCTOS CON DIFERENCIAS (AHORA VA PRIMERO)
     # ==============================================
-    st.subheader("🎯 Análisis de Precisión")
-    
-    if not conteos_df.empty and not escaneos_df.empty:
-        # Asegurar que los códigos sean strings para evitar problemas de tipos
+    if not escaneos_df.empty:
+        st.subheader("📋 Detalle de productos")
+        
+        # Asegurar que los códigos sean strings
         escaneos_df['codigo'] = escaneos_df['codigo'].astype(str)
         
         # Crear resumen por producto
@@ -1193,7 +1193,7 @@ def mostrar_resumen_general():
         
         resumen_precision.columns = ['codigo', 'producto', 'area', 'conteo_fisico']
         
-        # Cargar stock y asegurar que los códigos sean strings
+        # Cargar stock
         stock_df = cargar_stock()
         if not stock_df.empty:
             stock_df['codigo'] = stock_df['codigo'].astype(str)
@@ -1201,9 +1201,7 @@ def mostrar_resumen_general():
         else:
             stock_df_subset = pd.DataFrame(columns=['codigo', 'stock_sistema'])
         
-        # Merge con manejo de tipos
-        resumen_precision['codigo'] = resumen_precision['codigo'].astype(str)
-        
+        # Merge con stock
         if not stock_df_subset.empty:
             resumen_precision = resumen_precision.merge(
                 stock_df_subset, 
@@ -1222,7 +1220,50 @@ def mostrar_resumen_general():
             lambda x: '✅ Exacto' if x == 0 else ('⚠️ Sobrante' if x > 0 else '🔻 Faltante')
         )
         
-        # Calcular estadísticas
+        # Ordenar por diferencia absoluta (mayor primero)
+        resumen_precision['abs_diferencia'] = resumen_precision['diferencia'].abs()
+        resumen_precision = resumen_precision.sort_values('abs_diferencia', ascending=False).drop('abs_diferencia', axis=1)
+        
+        # Mostrar tabla de productos
+        st.dataframe(
+            resumen_precision[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
+            width='stretch',
+            hide_index=True,
+            column_config={
+                'diferencia': st.column_config.NumberColumn(format="%+d")
+            }
+        )
+        
+        st.caption(f"Mostrando {len(resumen_precision)} productos")
+        
+        st.markdown("---")
+    
+    # ==============================================
+    # SECCIÓN 3: ANÁLISIS DE PRECISIÓN (AHORA VA AL FINAL)
+    # ==============================================
+    if not conteos_df.empty and not escaneos_df.empty:
+        st.subheader("🎯 Análisis de Precisión")
+        
+        # Calcular estadísticas (reutilizando resumen_precision si ya existe)
+        if 'resumen_precision' not in locals():
+            # Si no se calculó antes, calcularlo ahora
+            escaneos_df['codigo'] = escaneos_df['codigo'].astype(str)
+            resumen_precision = escaneos_df.groupby(['codigo', 'producto', 'area']).agg({
+                'cantidad_escaneada': 'sum'
+            }).reset_index()
+            resumen_precision.columns = ['codigo', 'producto', 'area', 'conteo_fisico']
+            
+            stock_df = cargar_stock()
+            if not stock_df.empty:
+                stock_df['codigo'] = stock_df['codigo'].astype(str)
+                stock_df_subset = stock_df[['codigo', 'stock_sistema']].copy()
+                resumen_precision = resumen_precision.merge(stock_df_subset, on='codigo', how='left')
+            else:
+                resumen_precision['stock_sistema'] = 0
+            
+            resumen_precision['stock_sistema'] = resumen_precision['stock_sistema'].fillna(0).astype(int)
+            resumen_precision['diferencia'] = resumen_precision['conteo_fisico'] - resumen_precision['stock_sistema']
+        
         total_productos = len(resumen_precision)
         exactos = len(resumen_precision[resumen_precision['diferencia'] == 0])
         sobrantes = len(resumen_precision[resumen_precision['diferencia'] > 0])
@@ -1244,28 +1285,20 @@ def mostrar_resumen_general():
             diferencia_neta = resumen_precision['diferencia'].sum()
             st.metric("📊 Diferencia neta", f"{diferencia_neta:+,d}")
         
-        # Mostrar tabla de productos con diferencias
-        st.markdown("---")
-        st.subheader("📋 Detalle de productos con diferencias")
-        
-        # Filtrar solo productos con diferencias
-        productos_con_diferencia = resumen_precision[resumen_precision['diferencia'] != 0].copy()
-        
-        if not productos_con_diferencia.empty:
-            # Ordenar por diferencia absoluta (mayor primero)
-            productos_con_diferencia['abs_diferencia'] = productos_con_diferencia['diferencia'].abs()
-            productos_con_diferencia = productos_con_diferencia.sort_values('abs_diferencia', ascending=False).drop('abs_diferencia', axis=1)
-            
-            st.dataframe(
-                productos_con_diferencia[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
-                width='stretch',
-                hide_index=True,
-                column_config={
-                    'diferencia': st.column_config.NumberColumn(format="%+d")
-                }
-            )
-        else:
-            st.info("No hay productos con diferencias")
+        # Opcional: mostrar solo productos con diferencias en un expander
+        with st.expander("📋 Ver solo productos con diferencias"):
+            productos_con_diferencia = resumen_precision[resumen_precision['diferencia'] != 0].copy()
+            if not productos_con_diferencia.empty:
+                st.dataframe(
+                    productos_con_diferencia[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
+                    width='stretch',
+                    hide_index=True,
+                    column_config={
+                        'diferencia': st.column_config.NumberColumn(format="%+d")
+                    }
+                )
+            else:
+                st.info("No hay productos con diferencias")
     
     else:
         st.info("📭 No hay suficientes datos para análisis de precisión")
