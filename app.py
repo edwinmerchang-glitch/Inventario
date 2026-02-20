@@ -1111,330 +1111,173 @@ def mostrar_conteo_fisico():
 # 5️⃣ PÁGINA: REPORTES POR MARCA (CON TABLA GENERAL AL FINAL - CORREGIDO)
 # ======================================================
 def mostrar_reportes_marca():
-    """Mostrar reportes por marca con tabla general AL FINAL"""
+    """Mostrar reportes detallados por marca - VERSIÓN CORREGIDA"""
     st.title("🏷️ Reporte por Marcas")
     st.markdown("---")
     
     try:
-        # Obtener todas las marcas
-        marcas = db.obtener_todas_marcas()
+        # Obtener resumen por marcas
+        resumen_marcas = db.obtener_resumen_por_marca()
         
-        if not marcas:
-            st.warning("No hay marcas disponibles")
+        if resumen_marcas.empty:
+            st.warning("No hay datos de marcas disponibles")
             return
         
-        # Selector de marca
-        col_selector, _ = st.columns([1, 3])
-        with col_selector:
-            marca_seleccionada = st.selectbox(
-                "Seleccionar marca",
-                marcas,
-                key="marca_reporte_select",
-                label_visibility="collapsed"
-            )
+        # Mostrar resumen general
+        st.subheader("📊 Resumen General por Marcas")
         
-        if marca_seleccionada:
-            # ======================================================
-            # SECCIÓN 1: DETALLE DE LA MARCA SELECCIONADA
-            # ======================================================
-            st.markdown(f"# {marca_seleccionada}")
-            st.markdown("---")
+        # Formatear para mostrar
+        resumen_display = resumen_marcas.copy()
+        
+        # Asegurar que las columnas existen
+        columnas_requeridas = ['marca', 'total_productos', 'productos_contados', 
+                              'productos_no_escaneados', 'porcentaje_avance', 
+                              'stock_total_sistema', 'total_contado', 'diferencia_neta']
+        
+        # Crear columnas si no existen
+        for col in columnas_requeridas:
+            if col not in resumen_display.columns:
+                if col == 'diferencia_neta':
+                    resumen_display[col] = 0
+                elif col == 'porcentaje_avance':
+                    resumen_display[col] = 0.0
+                else:
+                    resumen_display[col] = 0
+        
+        # Formatear valores
+        resumen_display['% Avance'] = resumen_display['porcentaje_avance'].apply(lambda x: f"{x}%")
+        resumen_display['diferencia_neta'] = resumen_display['diferencia_neta'].apply(lambda x: f"{x:+,d}")
+        
+        st.dataframe(
+            resumen_display[['marca', 'total_productos', 'productos_contados', 
+                            'productos_no_escaneados', '% Avance', 'stock_total_sistema', 
+                            'total_contado', 'diferencia_neta']],
+            width='stretch',
+            hide_index=True,
+            column_config={
+                'marca': 'Marca',
+                'total_productos': 'Total Prod.',
+                'productos_contados': 'Contados',
+                'productos_no_escaneados': 'No Escaneados',
+                '% Avance': 'Avance',
+                'stock_total_sistema': 'Stock Sistema',
+                'total_contado': 'Total Contado',
+                'diferencia_neta': 'Dif. Neta'
+            }
+        )
+        
+        st.markdown("---")
+        
+        # Selector de marca para ver detalle
+        marcas = resumen_display['marca'].tolist()
+        if marcas:
+            marca_seleccionada = st.selectbox("🔍 Seleccionar marca para ver detalle", marcas)
             
-            # Obtener datos de la marca seleccionada
-            stats = db.obtener_estadisticas_marca(marca_seleccionada)
-            
-            # Detalle de productos
-            st.markdown(f"## Detalle de productos - {marca_seleccionada}")
-            
-            # Checkbox para filtrar no escaneados
-            col_checkbox, _ = st.columns([1, 3])
-            with col_checkbox:
-                mostrar_no_escaneados = st.checkbox(
-                    "Mostrar solo productos NO escaneados",
-                    key=f"no_escaneados_{marca_seleccionada}"
+            if marca_seleccionada:
+                st.subheader(f"📋 Detalle de productos - {marca_seleccionada}")
+                
+                # Opciones de filtro
+                col_filt1, col_filt2 = st.columns(2)
+                with col_filt1:
+                    solo_no_escaneados = st.checkbox("Mostrar solo productos NO escaneados")
+                
+                # Obtener detalle de productos
+                detalle = db.obtener_detalle_productos_por_marca(
+                    marca_seleccionada, 
+                    solo_no_escaneados=solo_no_escaneados
                 )
-            
-            # Métricas en 5 columnas
-            col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
-            
-            with col_m1:
-                st.metric("**Total Productos**", stats.get('total_productos', 0))
-            with col_m2:
-                st.metric("**Productos Contados**", stats.get('productos_contados', 0))
-            with col_m3:
-                st.metric("**No Escaneados**", stats.get('productos_no_contados', 0))
-            with col_m4:
-                st.metric("**Stock Total**", stats.get('stock_total', 0))
-            with col_m5:
-                diferencia_neta = stats.get('diferencia_neta', 0)
-                st.metric("**Diferencia Neta**", f"{diferencia_neta:+,d}")
-            
-            st.markdown("---")
-            
-            # Distribución por Estado
-            st.markdown("## Distribución por Estado")
-            
-            col_cb1, col_cb2, col_cb3 = st.columns(3)
-            with col_cb1:
-                filtrar_exactos = st.checkbox("✅ Exactos", value=True, key=f"exactos_{marca_seleccionada}")
-            with col_cb2:
-                filtrar_leves = st.checkbox("⚠️ Diferencias Leves", value=True, key=f"leves_{marca_seleccionada}")
-            with col_cb3:
-                filtrar_criticas = st.checkbox("🔴 Diferencias Críticas", value=True, key=f"criticas_{marca_seleccionada}")
-            
-            col_e1, col_e2, col_e3 = st.columns(3)
-            with col_e1:
-                exactos = stats.get('exactos', 0)
-                st.metric("**Exactos**", exactos)
-            with col_e2:
-                leves = stats.get('sobrantes_leves', 0) + stats.get('faltantes_leves', 0)
-                st.metric("**Diferencias Leves**", leves)
-            with col_e3:
-                criticas = stats.get('diferencias_criticas', 0)
-                st.metric("**Diferencias Críticas**", criticas)
-            
-            st.markdown("---")
-            
-            # Listado de Productos
-            st.markdown("## Listado de Productos")
-            
-            # Obtener detalle de productos
-            detalle = db.obtener_detalle_productos_por_marca(marca_seleccionada)
-            
-            if not detalle.empty:
-                # Aplicar filtros
-                if mostrar_no_escaneados and 'estado' in detalle.columns:
-                    detalle_filtrado = detalle[detalle['estado'] == 'NO_ESCANEADO'].copy()
-                else:
-                    detalle_filtrado = detalle.copy()
                 
-                # Aplicar filtros de estado
-                if 'estado' in detalle_filtrado.columns:
-                    filtros_estado = []
-                    if filtrar_exactos:
-                        filtros_estado.append(detalle_filtrado['estado'] == 'OK')
-                    if filtrar_leves:
-                        filtros_estado.append(detalle_filtrado['estado'].isin(['LEVE', 'SOBRANTE_LEVE', 'FALTANTE_LEVE']))
-                    if filtrar_criticas:
-                        filtros_estado.append(detalle_filtrado['estado'] == 'CRITICA')
+                if not detalle.empty:
+                    # Estadísticas de la marca
+                    stats = db.obtener_estadisticas_marca(marca_seleccionada)
                     
-                    if filtros_estado:
-                        mask_final = filtros_estado[0]
-                        for mask in filtros_estado[1:]:
-                            mask_final = mask_final | mask
-                        tabla_productos = detalle_filtrado[mask_final].copy()
-                    else:
-                        tabla_productos = pd.DataFrame()
-                else:
-                    tabla_productos = detalle_filtrado.copy()
-                
-                if not tabla_productos.empty:
+                    # Mostrar métricas
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("Total Productos", stats.get('total_productos', 0))
+                    with col2:
+                        st.metric("Productos Contados", stats.get('productos_contados', 0))
+                    with col3:
+                        st.metric("No Escaneados", stats.get('productos_no_contados', 0))
+                    with col4:
+                        st.metric("Stock Total", stats.get('stock_total', 0))
+                    with col5:
+                        st.metric("Diferencia Neta", f"{stats.get('diferencia_neta', 0):+,d}")
+                    
+                    # Gráfico de estado
+                    st.subheader("📊 Distribución por Estado")
+                    col_graf1, col_graf2, col_graf3 = st.columns(3)
+                    
+                    with col_graf1:
+                        st.metric("✅ Exactos", stats.get('exactos', 0))
+                    with col_graf2:
+                        leves = stats.get('sobrantes_leves', 0) + stats.get('faltantes_leves', 0)
+                        st.metric("⚠️ Diferencias Leves", leves)
+                    with col_graf3:
+                        st.metric("🔴 Diferencias Críticas", stats.get('diferencias_criticas', 0))
+                    
+                    # Mostrar tabla de productos
+                    st.subheader("📋 Listado de Productos")
+                    
+                    # Función para colorear según estado
+                    def color_estado(val):
+                        if val == 'NO_ESCANEADO':
+                            return 'background-color: #fff3cd'
+                        elif val == 'OK':
+                            return 'background-color: #d4edda'
+                        elif val in ['LEVE', 'CRITICA']:
+                            return 'background-color: #f8d7da'
+                        return ''
+                    
                     # Preparar dataframe para mostrar
-                    display_df = tabla_productos.copy()
+                    detalle_display = detalle.copy()
                     
                     # Asegurar columnas necesarias
-                    columnas_requeridas = ['codigo', 'producto', 'area', 'stock_sistema', 
-                                          'conteo_fisico', 'diferencia', 'estado']
+                    if 'diferencia' in detalle_display.columns:
+                        detalle_display['diferencia'] = detalle_display['diferencia'].apply(lambda x: f"{x:+,d}")
                     
-                    for col in columnas_requeridas:
-                        if col not in display_df.columns:
-                            if col == 'diferencia':
-                                display_df[col] = 0
-                            elif col == 'conteo_fisico':
-                                display_df[col] = 0
-                            elif col == 'estado':
-                                display_df[col] = 'NO_ESCANEADO'
-                            else:
-                                display_df[col] = ''
+                    if 'ultimo_escaneo' in detalle_display.columns and not detalle_display['ultimo_escaneo'].isna().all():
+                        detalle_display['ultimo_escaneo'] = pd.to_datetime(detalle_display['ultimo_escaneo']).dt.strftime('%H:%M %d/%m')
                     
-                    # Convertir a tipos seguros
-                    for col in ['stock_sistema', 'conteo_fisico', 'diferencia']:
-                        if col in display_df.columns:
-                            display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0).astype(int)
-                    
-                    # Formatear diferencia como +0 (solo para visualización)
-                    display_df['diferencia_display'] = display_df['diferencia'].apply(
-                        lambda x: f"{int(x):+,d}"
-                    )
-                    
-                    # Mapear estados
-                    estado_map = {
-                        'OK': 'EXACTO',
-                        'NO_ESCANEADO': 'NO_ESCANEADO',
-                        'LEVE': 'DIFERENCIA LEVE',
-                        'SOBRANTE_LEVE': 'DIFERENCIA LEVE',
-                        'FALTANTE_LEVE': 'DIFERENCIA LEVE',
-                        'CRITICA': 'DIFERENCIA CRÍTICA'
-                    }
-                    
-                    if 'estado' in display_df.columns:
-                        display_df['estado_display'] = display_df['estado'].map(estado_map).fillna('NO_ESCANEADO')
+                    # Aplicar estilos
+                    if 'estado' in detalle_display.columns:
+                        styled_df = detalle_display.style.applymap(color_estado, subset=['estado'])
+                        st.dataframe(
+                            styled_df,
+                            width='stretch',
+                            hide_index=True,
+                            column_config={
+                                'codigo': 'Código',
+                                'producto': 'Producto',
+                                'area': 'Área',
+                                'stock_sistema': 'Stock Sistema',
+                                'conteo_fisico': 'Conteo',
+                                'diferencia': 'Diferencia',
+                                'estado': 'Estado',
+                                'ultimo_escaneo': 'Último Escaneo',
+                                'ultimo_usuario': 'Usuario'
+                            }
+                        )
                     else:
-                        display_df['estado_display'] = 'NO_ESCANEADO'
+                        st.dataframe(detalle_display, width='stretch', hide_index=True)
                     
-                    # Mostrar tabla
-                    st.dataframe(
-                        display_df[['codigo', 'producto', 'area', 'stock_sistema', 
-                                   'conteo_fisico', 'diferencia_display', 'estado_display']],
-                        width='stretch',
-                        hide_index=True,
-                        column_config={
-                            'codigo': 'Código',
-                            'producto': 'Producto',
-                            'area': 'Área',
-                            'stock_sistema': 'Stock Sistema',
-                            'conteo_fisico': 'Conteo',
-                            'diferencia_display': 'Diferencia',
-                            'estado_display': 'Estado'
-                        }
-                    )
-                    
-                    st.caption(f"Mostrando {len(display_df)} productos")
-                    
-                    # Botones de acción
-                    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 3])
-                    with col_btn1:
-                        if st.button("📥 Exportar CSV", use_container_width=True):
-                            # Para exportar, usar valores originales
-                            export_df = display_df[['codigo', 'producto', 'area', 'stock_sistema', 
-                                                   'conteo_fisico', 'diferencia', 'estado_display']].copy()
-                            export_df['diferencia'] = export_df['diferencia'].apply(lambda x: f"{int(x):+,d}")
-                            csv = export_df.to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                "⬇️ Descargar",
-                                data=csv,
-                                file_name=f"{marca_seleccionada}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                                mime="text/csv"
-                            )
-                    
-                    with col_btn2:
-                        if st.button("🔄 Limpiar", use_container_width=True):
-                            st.rerun()
-                else:
-                    st.info(f"No hay productos que coincidan con los filtros seleccionados")
-            else:
-                st.info(f"No hay productos para la marca {marca_seleccionada}")
-            
-            # ======================================================
-            # SECCIÓN FINAL: TABLA DE RESUMEN GENERAL POR MARCAS
-            # ======================================================
-            st.markdown("---")
-            st.markdown("## 📊 Resumen General por Marcas")
-            
-            # Obtener resumen de todas las marcas
-            resumen_marcas = db.obtener_resumen_por_marca()
-            
-            if not resumen_marcas.empty:
-                # Preparar dataframe para mostrar
-                resumen_display = resumen_marcas.copy()
-                
-                # Asegurar que todas las columnas existen y tienen tipos correctos
-                columnas_numericas = [
-                    'total_productos', 'productos_contados', 'productos_no_escaneados',
-                    'stock_total_sistema', 'total_contado', 'diferencia_neta'
-                ]
-                
-                for col in columnas_numericas:
-                    if col in resumen_display.columns:
-                        resumen_display[col] = pd.to_numeric(resumen_display[col], errors='coerce').fillna(0)
-                    else:
-                        resumen_display[col] = 0
-                
-                # Asegurar columna de porcentaje
-                if 'porcentaje_avance' in resumen_display.columns:
-                    resumen_display['porcentaje_avance'] = pd.to_numeric(resumen_display['porcentaje_avance'], errors='coerce').fillna(0.0)
-                else:
-                    resumen_display['porcentaje_avance'] = 0.0
-                
-                # Asegurar que 'marca' es string
-                if 'marca' in resumen_display.columns:
-                    resumen_display['marca'] = resumen_display['marca'].astype(str)
-                
-                # Formatear para visualización
-                resumen_display['avance_display'] = resumen_display['porcentaje_avance'].apply(
-                    lambda x: f"{float(x):.1f}%" if pd.notna(x) else "0.0%"
-                )
-                
-                resumen_display['diferencia_display'] = resumen_display['diferencia_neta'].apply(
-                    lambda x: f"{int(float(x)):+,d}" if pd.notna(x) else "+0"
-                )
-                
-                # Ordenar por marca
-                resumen_display = resumen_display.sort_values('marca')
-                
-                # Mostrar tabla
-                st.dataframe(
-                    resumen_display[[
-                        'marca', 'total_productos', 'productos_contados', 
-                        'productos_no_escaneados', 'avance_display', 
-                        'stock_total_sistema', 'total_contado', 'diferencia_display'
-                    ]],
-                    width='stretch',
-                    hide_index=True,
-                    column_config={
-                        'marca': 'Marca',
-                        'total_productos': 'Total Prod.',
-                        'productos_contados': 'Contados',
-                        'productos_no_escaneados': 'No Escaneados',
-                        'avance_display': 'Avance',
-                        'stock_total_sistema': 'Stock Sistema',
-                        'total_contado': 'Total Contado',
-                        'diferencia_display': 'Dif. Neta'
-                    }
-                )
-                
-                # Estadísticas generales (convertir a valores numéricos seguros)
-                try:
-                    total_productos_gral = int(resumen_display['total_productos'].sum())
-                    
-                    # Convertir total_contado a numérico
-                    if 'total_contado' in resumen_display.columns:
-                        total_contado_gral = int(pd.to_numeric(resumen_display['total_contado'], errors='coerce').sum())
-                    else:
-                        total_contado_gral = 0
-                    
-                    # Calcular diferencia neta total
-                    if 'diferencia_neta' in resumen_display.columns:
-                        dif_neta_total = int(pd.to_numeric(resumen_display['diferencia_neta'], errors='coerce').sum())
-                    else:
-                        dif_neta_total = 0
-                    
-                    col_total1, col_total2, col_total3 = st.columns(3)
-                    
-                    with col_total1:
-                        st.metric("📦 Total Productos", total_productos_gral)
-                    
-                    with col_total2:
-                        st.metric("📊 Total Unidades Contadas", total_contado_gral)
-                    
-                    with col_total3:
-                        st.metric("⚖️ Diferencia Neta Total", f"{dif_neta_total:+,d}")
-                    
-                except Exception as e:
-                    st.warning(f"Error calculando estadísticas generales: {e}")
-                
-                # Botón para exportar resumen general
-                if st.button("📥 Exportar Resumen General a CSV", use_container_width=True):
-                    try:
-                        export_df = resumen_display[['marca', 'total_productos', 'productos_contados', 
-                                                    'productos_no_escaneados', 'porcentaje_avance', 
-                                                    'stock_total_sistema', 'total_contado', 'diferencia_neta']].copy()
-                        export_df['porcentaje_avance'] = export_df['porcentaje_avance'].apply(lambda x: f"{float(x):.1f}%")
-                        export_df['diferencia_neta'] = export_df['diferencia_neta'].apply(lambda x: f"{int(float(x)):+,d}")
-                        csv = export_df.to_csv(index=False).encode('utf-8')
+                    # Botón para exportar
+                    if st.button("📥 Exportar detalle de marca a CSV", width='stretch'):
+                        csv = detalle.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            "⬇️ Descargar Resumen General",
+                            "⬇️ Descargar CSV",
                             data=csv,
-                            file_name=f"resumen_marcas_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            file_name=f"detalle_{marca_seleccionada}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                             mime="text/csv"
                         )
-                    except Exception as e:
-                        st.error(f"Error al exportar: {e}")
-            else:
-                st.info("No hay datos de resumen por marcas disponibles")
-                
+                else:
+                    st.info(f"No hay productos para la marca {marca_seleccionada}")
+        else:
+            st.warning("No hay marcas disponibles")
+            
     except Exception as e:
         st.error(f"Error al cargar reportes por marca: {str(e)}")
+        # Mostrar información de depuración
         with st.expander("🔍 Detalles del error"):
             st.exception(e)
 
