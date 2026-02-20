@@ -946,7 +946,7 @@ def mostrar_conteo_fisico():
 # 5️⃣ PÁGINA: REPORTES POR MARCA (NUEVA)
 # ======================================================
 def mostrar_reportes_marca():
-    """Mostrar reportes detallados por marca - CON SELECTOR AL INICIO"""
+    """Mostrar reportes detallados por marca - CON TABLA DETALLE VISIBLE"""
     st.title("🏷️ Reporte por Marcas")
     st.markdown("---")
     
@@ -970,7 +970,8 @@ def mostrar_reportes_marca():
             marca_seleccionada = st.selectbox(
                 "Selecciona una marca para ver su detalle completo:",
                 opciones_marca,
-                index=0
+                index=0,
+                key="selector_marca_principal"
             )
             
             # Si se seleccionó una marca válida (no es el placeholder)
@@ -979,12 +980,15 @@ def mostrar_reportes_marca():
                 st.subheader(f"📋 Detalle de productos - {marca_seleccionada}")
                 
                 # Opciones de filtro para el detalle
-                col_filt1, col_filt2 = st.columns([2, 1])
+                col_filt1, col_filt2, col_filt3 = st.columns([2, 1, 1])
                 with col_filt1:
-                    solo_no_escaneados = st.checkbox("Mostrar solo productos NO escaneados", key="filtro_no_escaneados")
+                    solo_no_escaneados = st.checkbox("Mostrar solo productos NO escaneados", key="filtro_no_escaneados_marca")
                 with col_filt2:
+                    solo_con_diferencias = st.checkbox("Mostrar solo con diferencias", key="filtro_diferencias_marca")
+                with col_filt3:
                     if st.button("🔄 Limpiar filtros", use_container_width=True):
                         solo_no_escaneados = False
+                        solo_con_diferencias = False
                         st.rerun()
                 
                 # Obtener detalle de productos
@@ -994,11 +998,15 @@ def mostrar_reportes_marca():
                 )
                 
                 if not detalle.empty:
+                    # Aplicar filtro adicional de diferencias si está activado
+                    if solo_con_diferencias and not solo_no_escaneados:
+                        detalle = detalle[detalle['diferencia'] != 0].copy()
+                    
                     # Estadísticas de la marca
                     stats = db.obtener_estadisticas_marca(marca_seleccionada)
                     
                     # Mostrar métricas rápidas de la marca
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
                         st.metric("📦 Total Productos", stats.get('total_productos', 0))
                     with col2:
@@ -1007,29 +1015,64 @@ def mostrar_reportes_marca():
                         st.metric("⏳ No Escaneados", stats.get('productos_no_contados', 0))
                     with col4:
                         st.metric("📊 Stock Total", stats.get('stock_total', 0))
+                    with col5:
+                        st.metric("📊 Diferencia Neta", f"{stats.get('diferencia_neta', 0):+,d}")
                     
-                    # Mostrar tabla de productos de la marca
+                    st.markdown("---")
+                    
+                    # ==============================================
+                    # TABLA DETALLE DE PRODUCTOS (VISIBLE)
+                    # ==============================================
+                    st.subheader(f"📋 Listado de productos - {marca_seleccionada}")
+                    
+                    # Preparar dataframe para mostrar
+                    detalle_display = detalle.copy()
+                    
+                    # Asegurar columnas necesarias
+                    if 'diferencia' in detalle_display.columns:
+                        detalle_display['diferencia'] = detalle_display['diferencia'].apply(lambda x: f"{x:+,d}")
+                    
+                    if 'ultimo_escaneo' in detalle_display.columns and not detalle_display['ultimo_escaneo'].isna().all():
+                        detalle_display['ultimo_escaneo'] = pd.to_datetime(detalle_display['ultimo_escaneo']).dt.strftime('%H:%M %d/%m')
+                    
+                    # Mostrar tabla completa
                     st.dataframe(
-                        detalle[['codigo', 'producto', 'area', 'stock_sistema', 
-                                'conteo_fisico', 'diferencia', 'estado']],
+                        detalle_display[['codigo', 'producto', 'area', 'stock_sistema', 
+                                        'conteo_fisico', 'diferencia', 'estado', 'ultimo_escaneo']],
                         width='stretch',
                         hide_index=True,
                         column_config={
-                            'diferencia': st.column_config.NumberColumn(format="%+d")
+                            'codigo': 'Código',
+                            'producto': 'Producto',
+                            'area': 'Área',
+                            'stock_sistema': 'Stock Sistema',
+                            'conteo_fisico': 'Conteo Físico',
+                            'diferencia': 'Diferencia',
+                            'estado': 'Estado',
+                            'ultimo_escaneo': 'Último Escaneo'
                         }
                     )
                     
+                    st.caption(f"📊 Mostrando {len(detalle)} productos de {stats.get('total_productos', 0)} totales")
+                    
                     # Botón para exportar detalle de la marca
-                    if st.button(f"📥 Exportar detalle de {marca_seleccionada} a CSV", use_container_width=True):
-                        csv = detalle.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            "⬇️ Descargar CSV",
-                            data=csv,
-                            file_name=f"detalle_{marca_seleccionada}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv"
-                        )
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.button(f"📥 Exportar detalle de {marca_seleccionada} a CSV", use_container_width=True):
+                            csv = detalle.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                "⬇️ Descargar CSV",
+                                data=csv,
+                                file_name=f"detalle_{marca_seleccionada}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                mime="text/csv"
+                            )
+                    with col_btn2:
+                        if st.button("🔄 Ver todos los productos", use_container_width=True):
+                            solo_no_escaneados = False
+                            solo_con_diferencias = False
+                            st.rerun()
                 else:
-                    st.info(f"No hay productos para la marca {marca_seleccionada}")
+                    st.info(f"No hay productos para la marca {marca_seleccionada} con los filtros actuales")
             
             st.markdown("---")
         else:
@@ -1114,10 +1157,11 @@ def mostrar_reportes_marca():
                 avance_global = (total_contados_global / total_productos_global * 100) if total_productos_global > 0 else 0
                 st.metric("📊 Avance global", f"{avance_global:.1f}%")
             
-            # Gráfico de distribución (textual)
-            st.write("**Distribución de productos por marca:**")
-            for _, row in resumen_marcas.iterrows():
-                st.write(f"• {row['marca']}: {row['total_productos']} productos ({row['porcentaje_avance']}% contados)")
+            # Mostrar top marcas
+            st.write("**Top 3 marcas con mayor avance:**")
+            top_marcas = resumen_marcas.nlargest(3, 'porcentaje_avance')[['marca', 'porcentaje_avance']]
+            for _, row in top_marcas.iterrows():
+                st.write(f"• {row['marca']}: {row['porcentaje_avance']}%")
             
     except Exception as e:
         st.error(f"Error al cargar reportes por marca: {str(e)}")
