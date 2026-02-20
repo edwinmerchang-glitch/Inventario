@@ -583,7 +583,7 @@ def mostrar_importar_excel():
             with st.expander("👁️ Vista previa", expanded=True):
                 st.dataframe(df_excel.head(10), use_container_width=True)
             
-            columnas_requeridas = {"codigo", "producto", "area", "stock_sistema"}
+            columnas_requeridas = {"codigo", "producto", "area", "stock_sistema", "marca"}
             columnas_encontradas = set(df_excel.columns)
             
             if columnas_requeridas.issubset(columnas_encontradas):
