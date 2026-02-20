@@ -51,7 +51,7 @@ def conteo_rapido():
     st.title("📷 Conteo rápido")
 
     with st.form("scan", clear_on_submit=True):
-        codigo = st.text_input("Código", autofocus=True)
+        codigo = st.text_input("Código")  # 👈 Quitamos autofocus=True
         cantidad = st.number_input("Cantidad", 1, 1000, 1)
 
         if st.form_submit_button("Registrar"):
@@ -77,6 +77,9 @@ def conteo_rapido():
                 backup_to_github()
 
             st.success(f"✅ {prod['producto']} +{cantidad}")
+            
+            # Forzar rerun para limpiar el formulario
+            st.rerun()  # 👈 Añadimos esto para que el formulario se limpie y el cursor vuelva al campo
 
 
 def reportes():
