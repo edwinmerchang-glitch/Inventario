@@ -2,23 +2,48 @@
 import sqlite3
 import pandas as pd
 from datetime import datetime
-import os
+import hashlib
 
 DB_NAME = "inventario.db"
 
 def get_connection():
-    """Crear y retornar conexión a la base de datos con optimizaciones"""
-    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-    # Optimizaciones para mejor rendimiento
-    conn.execute("PRAGMA synchronous = OFF")
-    conn.execute("PRAGMA journal_mode = MEMORY")
-    conn.execute("PRAGMA cache_size = 10000")
+    """Crear y retornar conexión a la base de datos"""
+    conn = sqlite3.connect(DB_NAME, timeout=30)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.row_factory = sqlite3.Row
     return conn
 
 def init_database():
-    """Inicializar la base de datos con las tablas necesarias"""
+    """Inicializar la base de datos con todas las tablas necesarias"""
     conn = get_connection()
     cursor = conn.cursor()
+    
+    # Tabla de usuarios (para autenticación)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            username TEXT PRIMARY KEY,
+            nombre TEXT NOT NULL,
+            password TEXT NOT NULL,
+            rol TEXT CHECK(rol IN ('admin', 'inventario', 'consulta')) DEFAULT 'inventario',
+            activo BOOLEAN DEFAULT 1
+        )
+    ''')
+    
+    # Tabla de marcas
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS marcas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT UNIQUE NOT NULL,
+            activo BOOLEAN DEFAULT 1
+        )
+    ''')
+    
+    # Insertar marcas por defecto
+    marcas_default = ['GENVEN', 'LETI', 'OTROS', 'SIN MARCA']
+    for marca in marcas_default:
+        cursor.execute('INSERT OR IGNORE INTO marcas (nombre) VALUES (?)', (marca,))
     
     # Tabla de productos
     cursor.execute('''
@@ -29,17 +54,12 @@ def init_database():
             area TEXT NOT NULL,
             stock_sistema INTEGER DEFAULT 0,
             fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            activo BOOLEAN DEFAULT 1
+            activo BOOLEAN DEFAULT 1,
+            FOREIGN KEY (marca) REFERENCES marcas(nombre)
         )
     ''')
     
-    # Verificar columna marca
-    cursor.execute("PRAGMA table_info(productos)")
-    columnas = [columna[1] for columna in cursor.fetchall()]
-    if 'marca' not in columnas:
-        cursor.execute("ALTER TABLE productos ADD COLUMN marca TEXT")
-    
-    # Tabla de conteos
+    # Tabla de conteos/escaneos (UNIFICADA)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS conteos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,89 +70,117 @@ def init_database():
             marca TEXT,
             area TEXT NOT NULL,
             stock_sistema INTEGER NOT NULL,
-            conteo_fisico INTEGER NOT NULL,
+            cantidad_escaneada INTEGER NOT NULL,
+            total_acumulado INTEGER NOT NULL,
             diferencia INTEGER NOT NULL,
-            tipo_diferencia TEXT CHECK(tipo_diferencia IN ('OK', 'LEVE', 'CRITICA', 'NO_REGISTRADO', 'NO_ESCANEADO')),
-            FOREIGN KEY (codigo_producto) REFERENCES productos(codigo)
+            tipo_operacion TEXT DEFAULT 'ESCANEO',
+            FOREIGN KEY (codigo_producto) REFERENCES productos(codigo),
+            FOREIGN KEY (usuario) REFERENCES usuarios(username)
         )
     ''')
     
-    # Verificar columna marca en conteos
-    cursor.execute("PRAGMA table_info(conteos)")
-    columnas_conteos = [columna[1] for columna in cursor.fetchall()]
-    if 'marca' not in columnas_conteos:
-        cursor.execute("ALTER TABLE conteos ADD COLUMN marca TEXT")
-    
-    # Tabla de marcas
+    # Insertar usuario admin por defecto
+    admin_password = hashlib.sha256("admin123".encode()).hexdigest()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS marcas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT UNIQUE NOT NULL,
-            activo BOOLEAN DEFAULT 1,
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+        INSERT OR IGNORE INTO usuarios (username, nombre, password, rol) 
+        VALUES (?, ?, ?, ?)
+    ''', ('admin', 'Administrador', admin_password, 'admin'))
     
-    # Insertar marcas por defecto (solo si no existen)
-    marcas_default = ['GENVEN', 'LETI', 'OTROS', 'SIN MARCA']
-    for marca in marcas_default:
-        cursor.execute('INSERT OR IGNORE INTO marcas (nombre) VALUES (?)', (marca,))
-    
-    # Tabla de usuarios
+    # Insertar usuario inventario por defecto
+    inv_password = hashlib.sha256("inventario123".encode()).hexdigest()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            nombre TEXT NOT NULL,
-            rol TEXT CHECK(rol IN ('admin', 'inventario', 'consulta')) DEFAULT 'inventario',
-            activo BOOLEAN DEFAULT 1,
-            fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+        INSERT OR IGNORE INTO usuarios (username, nombre, password, rol) 
+        VALUES (?, ?, ?, ?)
+    ''', ('inventario', 'Operador Inventario', inv_password, 'inventario'))
     
-    # Insertar usuario admin
+    # Insertar usuario consulta por defecto
+    cons_password = hashlib.sha256("consulta123".encode()).hexdigest()
     cursor.execute('''
-        INSERT OR IGNORE INTO usuarios (username, nombre, rol) 
-        VALUES (?, ?, ?)
-    ''', ('admin', 'Administrador', 'admin'))
+        INSERT OR IGNORE INTO usuarios (username, nombre, password, rol) 
+        VALUES (?, ?, ?, ?)
+    ''', ('consulta', 'Usuario Consulta', cons_password, 'consulta'))
     
-    # Índices para mejor performance
+    # Índices para mejorar rendimiento
     indices = [
-        'CREATE INDEX IF NOT EXISTS idx_productos_area ON productos(area)',
-        'CREATE INDEX IF NOT EXISTS idx_productos_marca ON productos(marca)',
         'CREATE INDEX IF NOT EXISTS idx_conteos_fecha ON conteos(fecha)',
         'CREATE INDEX IF NOT EXISTS idx_conteos_usuario ON conteos(usuario)',
+        'CREATE INDEX IF NOT EXISTS idx_conteos_codigo ON conteos(codigo_producto)',
         'CREATE INDEX IF NOT EXISTS idx_conteos_marca ON conteos(marca)',
-        'CREATE INDEX IF NOT EXISTS idx_conteos_diferencia ON conteos(diferencia)',
-        'CREATE INDEX IF NOT EXISTS idx_conteos_fecha_marca ON conteos(fecha, marca)'
+        'CREATE INDEX IF NOT EXISTS idx_productos_marca ON productos(marca)'
     ]
     
     for idx in indices:
         try:
             cursor.execute(idx)
         except:
-            pass  # Ignorar errores de índices
+            pass
     
     conn.commit()
     conn.close()
 
-# Inicializar DB
+# Inicializar DB al importar
 init_database()
 
-def limpiar_codigo(codigo):
-    """Limpiar código de producto"""
-    return str(codigo).strip().replace("\n", "").replace("\r", "") if codigo else ""
+# ==============================================
+# FUNCIONES PARA USUARIOS
+# ==============================================
 
-# Funciones para marcas
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verificar_login(username, password):
+    """Verificar credenciales de usuario"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT username, nombre, rol FROM usuarios 
+        WHERE username = ? AND password = ? AND activo = 1
+    ''', (username, hash_password(password)))
+    
+    usuario = cursor.fetchone()
+    conn.close()
+    
+    if usuario:
+        return True, usuario[0], usuario[1], usuario[2]
+    return False, None, None, None
+
+def crear_usuario(username, nombre, password, rol):
+    """Crear nuevo usuario"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO usuarios (username, nombre, password, rol)
+            VALUES (?, ?, ?, ?)
+        ''', (username, nombre, hash_password(password), rol))
+        conn.commit()
+        return True, "Usuario creado correctamente"
+    except sqlite3.IntegrityError:
+        return False, "El nombre de usuario ya existe"
+    finally:
+        conn.close()
+
+def obtener_todos_usuarios():
+    """Obtener todos los usuarios"""
+    conn = get_connection()
+    df = pd.read_sql_query('''
+        SELECT username, nombre, rol, activo FROM usuarios ORDER BY username
+    ''', conn)
+    conn.close()
+    return df
+
+# ==============================================
+# FUNCIONES PARA MARCAS
+# ==============================================
+
 def obtener_todas_marcas():
     """Obtener todas las marcas activas"""
-    try:
-        conn = get_connection()
-        df = pd.read_sql_query('SELECT nombre FROM marcas WHERE activo = 1 ORDER BY nombre', conn)
-        conn.close()
-        return df['nombre'].tolist() if not df.empty else ['GENVEN', 'LETI', 'OTROS', 'SIN MARCA']
-    except:
-        return ['GENVEN', 'LETI', 'OTROS', 'SIN MARCA']
+    conn = get_connection()
+    df = pd.read_sql_query('SELECT nombre FROM marcas WHERE activo = 1 ORDER BY nombre', conn)
+    conn.close()
+    return df['nombre'].tolist() if not df.empty else ['GENVEN', 'LETI', 'OTROS', 'SIN MARCA']
 
 def crear_marca(nombre):
     """Crear nueva marca"""
@@ -147,30 +195,13 @@ def crear_marca(nombre):
     finally:
         conn.close()
 
-# Funciones para productos
-def obtener_producto(codigo):
-    """Obtener producto por código"""
-    codigo_limpio = limpiar_codigo(codigo)
-    if not codigo_limpio:
-        return None
-    
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM productos WHERE codigo = ?', (codigo_limpio,))
-    producto = cursor.fetchone()
-    conn.close()
-    
-    if producto:
-        return {
-            'codigo': producto[0],
-            'producto': producto[1],
-            'marca': producto[2] if len(producto) > 2 else None,
-            'area': producto[3] if len(producto) > 3 else None,
-            'stock_sistema': producto[4] if len(producto) > 4 else 0,
-            'fecha_actualizacion': producto[5] if len(producto) > 5 else None,
-            'activo': bool(producto[6] if len(producto) > 6 else 1)
-        }
-    return None
+# ==============================================
+# FUNCIONES PARA PRODUCTOS
+# ==============================================
+
+def limpiar_codigo(codigo):
+    """Limpiar código de producto"""
+    return str(codigo).strip().replace("\n", "").replace("\r", "") if codigo else ""
 
 def guardar_producto(codigo, producto, marca, area, stock_sistema):
     """Guardar o actualizar producto"""
@@ -191,14 +222,12 @@ def guardar_producto(codigo, producto, marca, area, stock_sistema):
     return True
 
 def guardar_productos_batch(productos_list):
-    """Guardar múltiples productos en batch (mucho más rápido)"""
+    """Guardar múltiples productos en batch"""
     if not productos_list:
         return
     
     conn = get_connection()
     cursor = conn.cursor()
-    
-    # Usar transacción para batch insert
     cursor.execute("BEGIN TRANSACTION")
     
     for prod in productos_list:
@@ -233,46 +262,195 @@ def obtener_todos_productos(marca=None):
     conn.close()
     return df
 
-# Funciones para conteos
-def registrar_conteo(usuario, codigo, producto, marca, area, stock_sistema, conteo_fisico):
-    """Registrar un conteo físico"""
-    diferencia = conteo_fisico - stock_sistema
+def obtener_producto_por_codigo(codigo):
+    """Obtener un producto por su código"""
+    codigo_limpio = limpiar_codigo(codigo)
+    conn = get_connection()
     
-    # Determinar tipo de diferencia
-    if diferencia == 0:
-        tipo_diferencia = "OK"
-    elif abs(diferencia) <= 2:
-        tipo_diferencia = "LEVE"
-    else:
-        tipo_diferencia = "CRITICA"
+    query = '''
+        SELECT codigo, producto, marca, area, stock_sistema 
+        FROM productos 
+        WHERE codigo = ? AND activo = 1
+    '''
+    df = pd.read_sql_query(query, conn, params=[codigo_limpio])
+    conn.close()
     
+    if not df.empty:
+        return df.iloc[0].to_dict()
+    return None
+
+# ==============================================
+# FUNCIONES PARA CONTEOS/ESCANEOS
+# ==============================================
+
+def registrar_escaneo(usuario, codigo, cantidad):
+    """Registrar un escaneo individual"""
+    codigo_limpio = limpiar_codigo(codigo)
+    
+    # Obtener producto
+    producto = obtener_producto_por_codigo(codigo_limpio)
+    if not producto:
+        return False, "Producto no encontrado"
+    
+    # Calcular total acumulado del día para este producto
     conn = get_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
+        SELECT SUM(cantidad_escaneada) as total 
+        FROM conteos 
+        WHERE codigo_producto = ? AND usuario = ? AND DATE(fecha) = DATE('now')
+    ''', (codigo_limpio, usuario))
+    
+    result = cursor.fetchone()
+    total_anterior = result[0] if result[0] else 0
+    nuevo_total = total_anterior + cantidad
+    
+    # Registrar el escaneo
+    cursor.execute('''
         INSERT INTO conteos 
         (fecha, usuario, codigo_producto, producto, marca, area, 
-         stock_sistema, conteo_fisico, diferencia, tipo_diferencia)
+         stock_sistema, cantidad_escaneada, total_acumulado, diferencia)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (datetime.now(), usuario, codigo, producto, marca, area, 
-          stock_sistema, conteo_fisico, diferencia, tipo_diferencia))
+    ''', (
+        datetime.now(), 
+        usuario, 
+        codigo_limpio, 
+        producto['producto'],
+        producto['marca'],
+        producto['area'],
+        producto['stock_sistema'],
+        cantidad,
+        nuevo_total,
+        nuevo_total - producto['stock_sistema']
+    ))
     
     conn.commit()
     conn.close()
     
-    return diferencia, tipo_diferencia
+    return True, {
+        'producto': producto,
+        'total_anterior': total_anterior,
+        'nuevo_total': nuevo_total,
+        'diferencia': nuevo_total - producto['stock_sistema']
+    }
 
-def obtener_resumen_por_marca():
-    """Obtener resumen completo por marca - VERSIÓN CORREGIDA"""
+def obtener_escaneos_hoy(usuario=None, codigo=None):
+    """Obtener escaneos de hoy"""
     conn = get_connection()
     
-    # Query optimizada que hace todo en una sola consulta
     query = '''
-        WITH conteos_hoy AS (
-            SELECT codigo_producto, 
-                   COALESCE(SUM(conteo_fisico), 0) as total_contado,
-                   COUNT(*) as veces_contado,
-                   COALESCE(SUM(diferencia), 0) as dif_total
+        SELECT 
+            fecha as timestamp,
+            usuario,
+            codigo_producto as codigo,
+            producto,
+            marca,
+            area,
+            cantidad_escaneada,
+            total_acumulado,
+            stock_sistema,
+            diferencia,
+            tipo_operacion
+        FROM conteos 
+        WHERE DATE(fecha) = DATE('now')
+    '''
+    params = []
+    
+    if usuario:
+        query += " AND usuario = ?"
+        params.append(usuario)
+    
+    if codigo:
+        query += " AND codigo_producto = ?"
+        params.append(codigo)
+    
+    query += " ORDER BY fecha DESC"
+    
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+def obtener_total_escaneado_hoy(usuario, codigo):
+    """Obtener total escaneado hoy para un usuario y producto"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT SUM(cantidad_escaneada) as total 
+        FROM conteos 
+        WHERE codigo_producto = ? AND usuario = ? AND DATE(fecha) = DATE('now')
+    ''', (codigo, usuario))
+    
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result[0] else 0
+
+def obtener_resumen_conteos_hoy():
+    """Obtener resumen de conteos de hoy"""
+    conn = get_connection()
+    
+    query = '''
+        SELECT 
+            usuario,
+            codigo_producto as codigo,
+            producto,
+            marca,
+            area,
+            stock_sistema,
+            MAX(total_acumulado) as conteo_fisico,
+            SUM(cantidad_escaneada) as total_escaneado,
+            MAX(total_acumulado) - stock_sistema as diferencia
+        FROM conteos 
+        WHERE DATE(fecha) = DATE('now')
+        GROUP BY codigo_producto, usuario
+        ORDER BY fecha DESC
+    '''
+    
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+def obtener_historial_completo(limite=1000):
+    """Obtener historial completo de escaneos"""
+    conn = get_connection()
+    
+    query = '''
+        SELECT 
+            fecha as timestamp,
+            usuario,
+            codigo_producto as codigo,
+            producto,
+            marca,
+            area,
+            cantidad_escaneada,
+            total_acumulado,
+            stock_sistema,
+            diferencia,
+            tipo_operacion
+        FROM conteos 
+        ORDER BY fecha DESC
+        LIMIT ?
+    '''
+    
+    df = pd.read_sql_query(query, conn, params=[limite])
+    conn.close()
+    return df
+
+# ==============================================
+# FUNCIONES PARA REPORTES POR MARCA
+# ==============================================
+
+def obtener_resumen_por_marca():
+    """Obtener resumen completo por marca"""
+    conn = get_connection()
+    
+    query = '''
+        WITH escaneos_hoy AS (
+            SELECT 
+                codigo_producto,
+                SUM(cantidad_escaneada) as total_contado,
+                COUNT(*) as veces_escaneado
             FROM conteos
             WHERE DATE(fecha) = DATE('now')
             GROUP BY codigo_producto
@@ -281,184 +459,144 @@ def obtener_resumen_por_marca():
             COALESCE(p.marca, 'SIN MARCA') as marca,
             COUNT(*) as total_productos,
             COALESCE(SUM(p.stock_sistema), 0) as stock_total_sistema,
-            COUNT(ch.codigo_producto) as productos_contados,
-            COALESCE(SUM(ch.total_contado), 0) as total_contado,
-            COALESCE(SUM(ch.dif_total), 0) - 
-                SUM(CASE WHEN ch.codigo_producto IS NULL THEN p.stock_sistema ELSE 0 END) as diferencia_neta,
-            SUM(CASE WHEN ch.codigo_producto IS NOT NULL AND ch.dif_total = 0 THEN 1 ELSE 0 END) as exactos,
-            SUM(CASE WHEN ch.codigo_producto IS NOT NULL AND ABS(ch.dif_total) <= 2 AND ch.dif_total != 0 THEN 1 ELSE 0 END) as leves,
-            SUM(CASE WHEN ch.codigo_producto IS NOT NULL AND ABS(ch.dif_total) > 2 THEN 1 ELSE 0 END) as criticas
+            COUNT(eh.codigo_producto) as productos_contados,
+            COUNT(*) - COUNT(eh.codigo_producto) as productos_no_escaneados,
+            COALESCE(SUM(eh.total_contado), 0) as total_contado,
+            CASE 
+                WHEN COUNT(*) > 0 
+                THEN ROUND(COUNT(eh.codigo_producto) * 100.0 / COUNT(*), 1)
+                ELSE 0 
+            END as porcentaje_avance,
+            COALESCE(SUM(eh.total_contado), 0) - COALESCE(SUM(p.stock_sistema), 0) as diferencia_neta
         FROM productos p
-        LEFT JOIN conteos_hoy ch ON p.codigo = ch.codigo_producto
+        LEFT JOIN escaneos_hoy eh ON p.codigo = eh.codigo_producto
         WHERE p.activo = 1
         GROUP BY COALESCE(p.marca, 'SIN MARCA')
         ORDER BY marca
     '''
     
-    try:
-        df = pd.read_sql_query(query, conn)
-        
-        if not df.empty:
-            # Convertir a tipos numéricos explícitamente
-            numeric_cols = ['total_productos', 'stock_total_sistema', 'productos_contados', 
-                           'total_contado', 'diferencia_neta', 'exactos', 'leves', 'criticas']
-            
-            for col in numeric_cols:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-            
-            # Calcular productos no escaneados y porcentaje de avance
-            df['productos_no_escaneados'] = df['total_productos'] - df['productos_contados']
-            df['porcentaje_avance'] = (df['productos_contados'] / df['total_productos'] * 100).round(1)
-            
-            # Llenar NaN de manera segura
-            df = df.fillna(0)
-            
-            # Asegurar tipos de datos
-            df['productos_no_escaneados'] = df['productos_no_escaneados'].astype(int)
-            df['porcentaje_avance'] = df['porcentaje_avance'].astype(float)
-        
-        conn.close()
-        return df
-        
-    except Exception as e:
-        print(f"Error en obtener_resumen_por_marca: {e}")
-        conn.close()
-        return pd.DataFrame()
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    
+    # Asegurar tipos de datos
+    if not df.empty:
+        numeric_cols = ['total_productos', 'stock_total_sistema', 'productos_contados', 
+                       'productos_no_escaneados', 'total_contado', 'diferencia_neta']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+    
+    return df
 
 def obtener_detalle_productos_por_marca(marca, solo_no_escaneados=False):
-    """Obtener detalle de productos por marca - VERSIÓN CORREGIDA"""
+    """Obtener detalle de productos por marca"""
     conn = get_connection()
     
-    # Query optimizada
     query = '''
+        WITH ultimos_escaneos AS (
+            SELECT 
+                codigo_producto,
+                MAX(fecha) as ultima_fecha,
+                usuario as ultimo_usuario
+            FROM conteos
+            WHERE DATE(fecha) = DATE('now')
+            GROUP BY codigo_producto
+        ),
+        totales_hoy AS (
+            SELECT 
+                codigo_producto,
+                SUM(cantidad_escaneada) as conteo_fisico
+            FROM conteos
+            WHERE DATE(fecha) = DATE('now')
+            GROUP BY codigo_producto
+        )
         SELECT 
             p.codigo,
             p.producto,
             COALESCE(p.marca, 'SIN MARCA') as marca,
             p.area,
             p.stock_sistema,
-            COALESCE(ch.total_contado, 0) as conteo_fisico,
+            COALESCE(th.conteo_fisico, 0) as conteo_fisico,
+            COALESCE(th.conteo_fisico, 0) - p.stock_sistema as diferencia,
             CASE 
-                WHEN ch.total_contado IS NULL THEN -p.stock_sistema
-                ELSE COALESCE(ch.total_contado, 0) - p.stock_sistema
-            END as diferencia,
-            CASE 
-                WHEN ch.total_contado IS NULL THEN 'NO_ESCANEADO'
-                WHEN COALESCE(ch.total_contado, 0) - p.stock_sistema = 0 THEN 'OK'
-                WHEN ABS(COALESCE(ch.total_contado, 0) - p.stock_sistema) <= 2 THEN 'LEVE'
+                WHEN th.conteo_fisico IS NULL THEN 'NO_ESCANEADO'
+                WHEN COALESCE(th.conteo_fisico, 0) - p.stock_sistema = 0 THEN 'OK'
+                WHEN ABS(COALESCE(th.conteo_fisico, 0) - p.stock_sistema) <= 2 THEN 'LEVE'
                 ELSE 'CRITICA'
             END as estado,
-            MAX(c.fecha) as ultimo_escaneo,
-            MAX(c.usuario) as ultimo_usuario
+            ue.ultima_fecha as ultimo_escaneo,
+            ue.ultimo_usuario
         FROM productos p
-        LEFT JOIN (
-            SELECT codigo_producto, SUM(conteo_fisico) as total_contado
-            FROM conteos
-            WHERE DATE(fecha) = DATE('now')
-            GROUP BY codigo_producto
-        ) ch ON p.codigo = ch.codigo_producto
-        LEFT JOIN conteos c ON p.codigo = c.codigo_producto 
-            AND DATE(c.fecha) = DATE('now')
+        LEFT JOIN totales_hoy th ON p.codigo = th.codigo_producto
+        LEFT JOIN ultimos_escaneos ue ON p.codigo = ue.codigo_producto
         WHERE p.activo = 1 AND COALESCE(p.marca, 'SIN MARCA') = ?
     '''
     
     params = [marca]
     
     if solo_no_escaneados:
-        query += " AND ch.total_contado IS NULL"
+        query = query.replace(
+            "WHERE p.activo = 1 AND COALESCE(p.marca, 'SIN MARCA') = ?",
+            "WHERE p.activo = 1 AND COALESCE(p.marca, 'SIN MARCA') = ? AND th.conteo_fisico IS NULL"
+        )
     
-    query += " GROUP BY p.codigo ORDER BY p.area, p.producto"
+    query += " ORDER BY p.area, p.producto"
     
-    try:
-        df = pd.read_sql_query(query, conn, params=params)
-        
-        if not df.empty:
-            # Convertir a tipos numéricos
-            df['stock_sistema'] = pd.to_numeric(df['stock_sistema'], errors='coerce').fillna(0).astype(int)
-            df['conteo_fisico'] = pd.to_numeric(df['conteo_fisico'], errors='coerce').fillna(0).astype(int)
-            df['diferencia'] = pd.to_numeric(df['diferencia'], errors='coerce').fillna(0).astype(int)
-            
-            # Formatear fecha
-            if 'ultimo_escaneo' in df.columns:
-                df['ultimo_escaneo'] = pd.to_datetime(df['ultimo_escaneo'], errors='coerce')
-        
-        conn.close()
-        return df
-        
-    except Exception as e:
-        print(f"Error en obtener_detalle_productos_por_marca: {e}")
-        conn.close()
-        return pd.DataFrame()
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    
+    if not df.empty:
+        df['stock_sistema'] = pd.to_numeric(df['stock_sistema'], errors='coerce').fillna(0).astype(int)
+        df['conteo_fisico'] = pd.to_numeric(df['conteo_fisico'], errors='coerce').fillna(0).astype(int)
+        df['diferencia'] = pd.to_numeric(df['diferencia'], errors='coerce').fillna(0).astype(int)
+    
+    return df
 
 def obtener_estadisticas_marca(marca):
-    """Obtener estadísticas detalladas de una marca específica"""
+    """Obtener estadísticas detalladas de una marca"""
     conn = get_connection()
     
     query = '''
+        WITH escaneos_hoy AS (
+            SELECT 
+                codigo_producto,
+                SUM(cantidad_escaneada) as total_contado,
+                SUM(cantidad_escaneada) - p.stock_sistema as dif
+            FROM conteos c
+            JOIN productos p ON c.codigo_producto = p.codigo
+            WHERE DATE(c.fecha) = DATE('now')
+            GROUP BY c.codigo_producto
+        )
         SELECT 
             COUNT(*) as total_productos,
             COALESCE(SUM(stock_sistema), 0) as stock_total,
-            COUNT(ch.codigo_producto) as productos_contados,
-            COUNT(*) - COUNT(ch.codigo_producto) as productos_no_contados,
-            COALESCE(SUM(ch.total_contado), 0) as total_contado,
-            SUM(CASE WHEN ch.dif_total = 0 THEN 1 ELSE 0 END) as exactos,
-            SUM(CASE WHEN ch.dif_total > 0 AND ch.dif_total <= 2 THEN 1 ELSE 0 END) as sobrantes_leves,
-            SUM(CASE WHEN ch.dif_total < 0 AND ch.dif_total >= -2 THEN 1 ELSE 0 END) as faltantes_leves,
-            SUM(CASE WHEN ABS(ch.dif_total) > 2 THEN 1 ELSE 0 END) as diferencias_criticas,
-            COALESCE(SUM(ch.dif_total), 0) - SUM(CASE WHEN ch.codigo_producto IS NULL THEN stock_sistema ELSE 0 END) as diferencia_neta
+            COUNT(eh.codigo_producto) as productos_contados,
+            COUNT(*) - COUNT(eh.codigo_producto) as productos_no_contados,
+            COALESCE(SUM(eh.total_contado), 0) as total_contado,
+            SUM(CASE WHEN eh.dif = 0 THEN 1 ELSE 0 END) as exactos,
+            SUM(CASE WHEN eh.dif > 0 AND eh.dif <= 2 THEN 1 ELSE 0 END) as sobrantes_leves,
+            SUM(CASE WHEN eh.dif < 0 AND eh.dif >= -2 THEN 1 ELSE 0 END) as faltantes_leves,
+            SUM(CASE WHEN ABS(eh.dif) > 2 THEN 1 ELSE 0 END) as diferencias_criticas,
+            COALESCE(SUM(eh.total_contado), 0) - COALESCE(SUM(stock_sistema), 0) as diferencia_neta
         FROM productos p
-        LEFT JOIN (
-            SELECT codigo_producto, 
-                   SUM(conteo_fisico) as total_contado,
-                   SUM(diferencia) as dif_total
-            FROM conteos
-            WHERE DATE(fecha) = DATE('now')
-            GROUP BY codigo_producto
-        ) ch ON p.codigo = ch.codigo_producto
+        LEFT JOIN escaneos_hoy eh ON p.codigo = eh.codigo_producto
         WHERE p.activo = 1 AND COALESCE(p.marca, 'SIN MARCA') = ?
         GROUP BY COALESCE(p.marca, 'SIN MARCA')
     '''
     
-    try:
-        df = pd.read_sql_query(query, conn, params=[marca])
-        conn.close()
-        
-        if not df.empty:
-            # Convertir a diccionario y asegurar tipos
-            stats = df.iloc[0].to_dict()
-            for key in stats:
-                if pd.isna(stats[key]):
-                    stats[key] = 0
-                elif isinstance(stats[key], (int, float)):
-                    stats[key] = int(stats[key])
-            return stats
-        else:
-            # Si no hay datos, devolver estadísticas por defecto
-            return {
-                'total_productos': 0,
-                'stock_total': 0,
-                'productos_contados': 0,
-                'productos_no_contados': 0,
-                'total_contado': 0,
-                'exactos': 0,
-                'sobrantes_leves': 0,
-                'faltantes_leves': 0,
-                'diferencias_criticas': 0,
-                'diferencia_neta': 0
-            }
-    except Exception as e:
-        print(f"Error en obtener_estadisticas_marca: {e}")
-        conn.close()
+    df = pd.read_sql_query(query, conn, params=[marca])
+    conn.close()
+    
+    if not df.empty:
+        stats = df.iloc[0].to_dict()
+        for key in stats:
+            if pd.isna(stats[key]):
+                stats[key] = 0
+        return stats
+    else:
         return {
-            'total_productos': 0,
-            'stock_total': 0,
-            'productos_contados': 0,
-            'productos_no_contados': 0,
-            'total_contado': 0,
-            'exactos': 0,
-            'sobrantes_leves': 0,
-            'faltantes_leves': 0,
-            'diferencias_criticas': 0,
+            'total_productos': 0, 'stock_total': 0, 'productos_contados': 0,
+            'productos_no_contados': 0, 'total_contado': 0, 'exactos': 0,
+            'sobrantes_leves': 0, 'faltantes_leves': 0, 'diferencias_criticas': 0,
             'diferencia_neta': 0
         }
