@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+import time  # Agrega esta importación
 
 from backup_manager import backup_to_github, restore_from_github
 from utils import cargar_escaneos, ARCHIVO_ESCANEOS
@@ -97,19 +98,48 @@ def importar():
 
     if archivo:
         df = pd.read_excel(archivo)
+        
+        # Validar columnas necesarias
+        columnas_requeridas = ["codigo", "producto"]
+        columnas_faltantes = [col for col in columnas_requeridas if col not in df.columns]
+        
+        if columnas_faltantes:
+            st.error(f"El Excel debe contener las columnas: {', '.join(columnas_faltantes)}")
+            return
+        
+        # Mostrar información del archivo
+        st.info(f"📊 Archivo con {len(df)} productos")
+        
+        # Vista previa
+        with st.expander("Vista previa de los datos"):
+            st.dataframe(df.head(10))
+            if len(df) > 10:
+                st.caption(f"Mostrando 10 de {len(df)} registros")
 
-        if st.button("Importar"):
-            for _, row in df.iterrows():
-                db.guardar_producto(
-                    str(row["codigo"]),
-                    row["producto"],
-                    row["marca"],
-                    row["area"],
-                    int(row["stock_sistema"])
-                )
-
-            backup_to_github()
-            st.success("Productos importados correctamente")
+        if st.button(f"🚀 Importar {len(df)} productos", type="primary"):
+            # Medir tiempo de inicio
+            start_time = time.time()
+            
+            with st.spinner(f"Importando {len(df)} productos..."):
+                try:
+                    # Usar la función de inserción masiva
+                    cantidad = db.guardar_productos_masivo(df)
+                    
+                    # Calcular tiempo transcurrido
+                    elapsed_time = time.time() - start_time
+                    
+                    # Hacer backup
+                    backup_to_github()
+                    
+                    # Mostrar éxito con tiempo
+                    st.success(f"✅ {cantidad} productos importados correctamente en {elapsed_time:.2f} segundos")
+                    
+                    # Mostrar velocidad de importación
+                    velocidad = cantidad / elapsed_time
+                    st.info(f"⚡ Velocidad: {velocidad:.0f} productos/segundo")
+                    
+                except Exception as e:
+                    st.error(f"Error durante la importación: {str(e)}")
 
 
 # ---------- NAVEGACIÓN ----------

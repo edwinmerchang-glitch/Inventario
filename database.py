@@ -73,6 +73,40 @@ def guardar_producto(codigo, producto, marca, area, stock):
     conn.close()
 
 
+def guardar_productos_masivo(df):
+    """
+    Guarda múltiples productos de una sola vez usando inserción por lotes
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Preparar los datos para inserción masiva
+    datos = []
+    ahora = datetime.now()
+    
+    for _, row in df.iterrows():
+        datos.append((
+            str(row["codigo"]),
+            row["producto"],
+            row.get("marca", ""),
+            row.get("area", ""),
+            int(row.get("stock_sistema", 0)),
+            ahora
+        ))
+    
+    # Inserción masiva
+    cursor.executemany("""
+    INSERT OR REPLACE INTO productos 
+    (codigo, producto, marca, area, stock_sistema, fecha_actualizacion)
+    VALUES (?,?,?,?,?,?)
+    """, datos)
+    
+    conn.commit()
+    conn.close()
+    
+    return len(datos)
+
+
 def obtener_producto(codigo):
     conn = get_connection()
     cursor = conn.cursor()
