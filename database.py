@@ -68,10 +68,10 @@ def init_database():
     # Insertar usuario admin por defecto
     cursor.execute("INSERT OR IGNORE INTO usuarios(username, nombre, rol) VALUES('admin', 'Administrador', 'admin')")
 
-    # Insertar marcas por defecto
+    # Insertar marcas por defecto - CORREGIDO: IGNORE en lugar de IGN
     marcas_default = ['GENVEN', 'LETI', 'OTROS', 'SIN MARCA']
     for marca in marcas_default:
-        cursor.execute("INSERT OR IGN INTO marcas(nombre) VALUES(?)", (marca,))
+        cursor.execute("INSERT OR IGNORE INTO marcas(nombre) VALUES(?)", (marca,))
 
     conn.commit()
     conn.close()
@@ -185,7 +185,8 @@ def crear_marca(nombre_marca):
         cursor.execute("INSERT OR IGNORE INTO marcas(nombre) VALUES(?)", (nombre_marca.upper(),))
         conn.commit()
         success = cursor.rowcount > 0
-    except:
+    except Exception as e:
+        print(f"Error creando marca: {e}")
         success = False
     finally:
         conn.close()
@@ -259,8 +260,15 @@ def obtener_resumen_por_marca():
     ORDER BY marca
     """
     
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+    try:
+        df = pd.read_sql_query(query, conn)
+    except Exception as e:
+        print(f"Error en consulta: {e}")
+        df = pd.DataFrame(columns=['marca', 'total_productos', 'productos_contados', 
+                                    'productos_no_escaneados', 'porcentaje_avance', 
+                                    'stock_total_sistema', 'total_contado', 'diferencia_neta'])
+    finally:
+        conn.close()
     
     if df.empty:
         return pd.DataFrame(columns=['marca', 'total_productos', 'productos_contados', 
@@ -325,8 +333,14 @@ def obtener_detalle_productos_por_marca(marca, solo_no_escaneados=False):
     
     query += " ORDER BY p.producto"
     
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        print(f"Error en consulta detalle: {e}")
+        df = pd.DataFrame(columns=['codigo', 'producto', 'area', 'stock_sistema', 
+                                  'conteo_fisico', 'diferencia', 'estado', 'ultimo_escaneo', 'ultimo_usuario'])
+    finally:
+        conn.close()
     
     return df
 
@@ -365,8 +379,15 @@ def obtener_estadisticas_marca(marca):
     FROM conteos_del_dia
     """
     
-    df = pd.read_sql_query(query, conn, params=[hoy, marca])
-    conn.close()
+    try:
+        df = pd.read_sql_query(query, conn, params=[hoy, marca])
+    except Exception as e:
+        print(f"Error en consulta estadísticas: {e}")
+        df = pd.DataFrame(columns=['total_productos', 'productos_contados', 'productos_no_contados',
+                                  'stock_total', 'total_contado', 'diferencia_neta', 'exactos',
+                                  'sobrantes_leves', 'faltantes_leves', 'diferencias_criticas'])
+    finally:
+        conn.close()
     
     if not df.empty:
         return df.iloc[0].to_dict()
