@@ -1138,50 +1138,15 @@ def mostrar_reportes():
         mostrar_historial_completo()
 
 def mostrar_resumen_general():
-    """Mostrar resumen general de conteos - CON SECCIONES REORDENADAS"""
+    """Mostrar resumen general de conteos - TODAS LAS MÉTRICAS AL FINAL"""
     conteos_df = cargar_conteos()
     escaneos_df = cargar_escaneos_detallados()
     
     # ==============================================
-    # SECCIÓN 1: MÉTRICAS PRINCIPALES
-    # ==============================================
-    st.subheader("📈 Métricas Principales")
-    
-    if escaneos_df.empty:
-        st.info("📭 No hay escaneos registrados")
-    else:
-        # Calcular métricas de escaneos
-        total_escaneos = len(escaneos_df)
-        productos_contados = escaneos_df['codigo'].nunique()
-        total_unidades = escaneos_df['cantidad_escaneada'].sum()
-        usuarios_activos = escaneos_df['usuario'].nunique()
-        
-        # Mostrar en 4 columnas
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        
-        with col_m1:
-            st.metric("📦 Productos contados", productos_contados, 
-                     help="Número de productos diferentes que han sido escaneados")
-        
-        with col_m2:
-            st.metric("🔢 Total escaneos", total_escaneos,
-                     help="Número total de veces que se ha escaneado")
-        
-        with col_m3:
-            st.metric("📦 Unidades contadas", total_unidades,
-                     help="Suma total de todas las cantidades escaneadas")
-        
-        with col_m4:
-            st.metric("👥 Usuarios activos", usuarios_activos,
-                     help="Número de usuarios que han realizado escaneos")
-    
-    st.markdown("---")
-    
-    # ==============================================
-    # SECCIÓN 2: TABLA DE PRODUCTOS CON DIFERENCIAS (AHORA VA PRIMERO)
+    # SECCIÓN 1: TABLA DE PRODUCTOS (PRIMERO)
     # ==============================================
     if not escaneos_df.empty:
-        st.subheader("📋 Detalle de productos")
+        st.subheader("📋 Detalle de productos escaneados")
         
         # Asegurar que los códigos sean strings
         escaneos_df['codigo'] = escaneos_df['codigo'].astype(str)
@@ -1234,36 +1199,62 @@ def mostrar_resumen_general():
             }
         )
         
-        st.caption(f"Mostrando {len(resumen_precision)} productos")
+        st.caption(f"📊 Mostrando {len(resumen_precision)} productos escaneados")
         
+        st.markdown("---")
+    else:
+        st.info("📭 No hay productos escaneados")
         st.markdown("---")
     
     # ==============================================
-    # SECCIÓN 3: ANÁLISIS DE PRECISIÓN (AHORA VA AL FINAL)
+    # SECCIÓN 2: MÉTRICAS PRINCIPALES (AHORA EN MEDIO)
     # ==============================================
-    if not conteos_df.empty and not escaneos_df.empty:
-        st.subheader("🎯 Análisis de Precisión")
+    st.subheader("📈 Métricas Principales")
+    
+    if escaneos_df.empty:
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        with col_m1:
+            st.metric("📦 Productos contados", 0)
+        with col_m2:
+            st.metric("🔢 Total escaneos", 0)
+        with col_m3:
+            st.metric("📦 Unidades contadas", 0)
+        with col_m4:
+            st.metric("👥 Usuarios activos", 0)
+    else:
+        # Calcular métricas de escaneos
+        total_escaneos = len(escaneos_df)
+        productos_contados = escaneos_df['codigo'].nunique()
+        total_unidades = escaneos_df['cantidad_escaneada'].sum()
+        usuarios_activos = escaneos_df['usuario'].nunique()
         
-        # Calcular estadísticas (reutilizando resumen_precision si ya existe)
-        if 'resumen_precision' not in locals():
-            # Si no se calculó antes, calcularlo ahora
-            escaneos_df['codigo'] = escaneos_df['codigo'].astype(str)
-            resumen_precision = escaneos_df.groupby(['codigo', 'producto', 'area']).agg({
-                'cantidad_escaneada': 'sum'
-            }).reset_index()
-            resumen_precision.columns = ['codigo', 'producto', 'area', 'conteo_fisico']
-            
-            stock_df = cargar_stock()
-            if not stock_df.empty:
-                stock_df['codigo'] = stock_df['codigo'].astype(str)
-                stock_df_subset = stock_df[['codigo', 'stock_sistema']].copy()
-                resumen_precision = resumen_precision.merge(stock_df_subset, on='codigo', how='left')
-            else:
-                resumen_precision['stock_sistema'] = 0
-            
-            resumen_precision['stock_sistema'] = resumen_precision['stock_sistema'].fillna(0).astype(int)
-            resumen_precision['diferencia'] = resumen_precision['conteo_fisico'] - resumen_precision['stock_sistema']
+        # Mostrar en 4 columnas
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         
+        with col_m1:
+            st.metric("📦 Productos contados", productos_contados, 
+                     help="Número de productos diferentes que han sido escaneados")
+        
+        with col_m2:
+            st.metric("🔢 Total escaneos", total_escaneos,
+                     help="Número total de veces que se ha escaneado")
+        
+        with col_m3:
+            st.metric("📦 Unidades contadas", total_unidades,
+                     help="Suma total de todas las cantidades escaneadas")
+        
+        with col_m4:
+            st.metric("👥 Usuarios activos", usuarios_activos,
+                     help="Número de usuarios que han realizado escaneos")
+    
+    st.markdown("---")
+    
+    # ==============================================
+    # SECCIÓN 3: ANÁLISIS DE PRECISIÓN (AL FINAL)
+    # ==============================================
+    st.subheader("🎯 Análisis de Precisión")
+    
+    if not conteos_df.empty and not escaneos_df.empty and 'resumen_precision' in locals():
         total_productos = len(resumen_precision)
         exactos = len(resumen_precision[resumen_precision['diferencia'] == 0])
         sobrantes = len(resumen_precision[resumen_precision['diferencia'] > 0])
@@ -1276,17 +1267,39 @@ def mostrar_resumen_general():
                      f"{(exactos/total_productos*100):.1f}%" if total_productos > 0 else "0%")
         
         with col_p2:
-            st.metric("⚠️ Sobrantes", sobrantes)
+            st.metric("⚠️ Sobrantes", sobrantes,
+                     help="Productos con conteo físico MAYOR al stock del sistema")
         
         with col_p3:
-            st.metric("🔻 Faltantes", faltantes)
+            st.metric("🔻 Faltantes", faltantes,
+                     help="Productos con conteo físico MENOR al stock del sistema")
         
         with col_p4:
             diferencia_neta = resumen_precision['diferencia'].sum()
-            st.metric("📊 Diferencia neta", f"{diferencia_neta:+,d}")
+            st.metric("📊 Diferencia neta", f"{diferencia_neta:+,d}",
+                     help="Suma total de todas las diferencias (positivas y negativas)")
         
-        # Opcional: mostrar solo productos con diferencias en un expander
-        with st.expander("📋 Ver solo productos con diferencias"):
+        # Resumen visual adicional
+        with st.expander("📊 Ver resumen detallado"):
+            col_res1, col_res2 = st.columns(2)
+            
+            with col_res1:
+                st.write("**Productos con diferencias:**")
+                st.write(f"• Sobrantes (positivas): {sobrantes}")
+                st.write(f"• Faltantes (negativas): {faltantes}")
+                st.write(f"• Total con diferencias: {sobrantes + faltantes}")
+            
+            with col_res2:
+                st.write("**Magnitud de diferencias:**")
+                if sobrantes > 0:
+                    promedio_sobrante = resumen_precision[resumen_precision['diferencia'] > 0]['diferencia'].mean()
+                    st.write(f"• Promedio sobrante: +{promedio_sobrante:.1f} unidades")
+                if faltantes > 0:
+                    promedio_faltante = abs(resumen_precision[resumen_precision['diferencia'] < 0]['diferencia'].mean())
+                    st.write(f"• Promedio faltante: -{promedio_faltante:.1f} unidades")
+        
+        # Mostrar solo productos con diferencias (opcional)
+        with st.expander("🔍 Ver solo productos con diferencias"):
             productos_con_diferencia = resumen_precision[resumen_precision['diferencia'] != 0].copy()
             if not productos_con_diferencia.empty:
                 st.dataframe(
@@ -1298,10 +1311,25 @@ def mostrar_resumen_general():
                     }
                 )
             else:
-                st.info("No hay productos con diferencias")
+                st.info("🎉 ¡Todos los productos tienen conteos exactos!")
     
     else:
-        st.info("📭 No hay suficientes datos para análisis de precisión")
+        # Si no hay datos suficientes
+        if escaneos_df.empty:
+            st.info("📭 No hay escaneos registrados para analizar")
+        elif 'resumen_precision' not in locals():
+            st.info("📊 No hay suficientes datos para el análisis de precisión")
+        else:
+            # Mostrar métricas en cero
+            col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+            with col_p1:
+                st.metric("✅ Conteos exactos", "0 de 0", "0%")
+            with col_p2:
+                st.metric("⚠️ Sobrantes", 0)
+            with col_p3:
+                st.metric("🔻 Faltantes", 0)
+            with col_p4:
+                st.metric("📊 Diferencia neta", "+0")
 
 def mostrar_historial_completo():
     """Mostrar historial completo de escaneos"""
