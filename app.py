@@ -1677,7 +1677,7 @@ def mostrar_gestion_usuarios():
         st.info("No hay usuarios registrados")
 
 # ======================================================
-# 8️⃣ PÁGINA: CONFIGURACIÓN (ACTUALIZADA)
+# 8️⃣ PÁGINA: CONFIGURACIÓN (ACTUALIZADA - SIN GESTIÓN DE MARCAS)
 # ======================================================
 def mostrar_configuracion():
     """Mostrar página de configuración"""
@@ -1687,25 +1687,6 @@ def mostrar_configuracion():
         return
     
     st.title("⚙️ Configuración del Sistema")
-    st.markdown("---")
-    
-    # Gestión de marcas
-    st.subheader("🏷️ Gestión de Marcas")
-    
-    marcas = db.obtener_todas_marcas()
-    st.write("**Marcas disponibles:**")
-    st.write(", ".join(marcas))
-    
-    with st.form("nueva_marca_config"):
-        nueva_marca = st.text_input("Agregar nueva marca")
-        if st.form_submit_button("➕ Agregar"):
-            if nueva_marca:
-                if db.crear_marca(nueva_marca):
-                    st.success(f"Marca '{nueva_marca}' agregada")
-                    st.rerun()
-                else:
-                    st.error("La marca ya existe")
-    
     st.markdown("---")
     
     # Estadísticas del sistema
