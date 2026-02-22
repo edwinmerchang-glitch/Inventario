@@ -266,13 +266,13 @@ def mostrar_login():
                     else:
                         st.warning("⚠️ Complete todos los campos")
             
-            with st.expander("🧪 Credenciales de prueba", expanded=False):
-                st.write("**Administrador:**")
-                st.code("Usuario: admin / Contraseña: admin123")
-                st.write("**Operador Inventario:**")
-                st.code("Usuario: inventario / Contraseña: inventario123")
-                st.write("**Usuario Consulta:**")
-                st.code("Usuario: consulta / Contraseña: consulta123")
+            #with st.expander("🧪 Credenciales de prueba", expanded=False):
+            #    st.write("**Administrador:**")
+            #    st.code("Usuario: admin / Contraseña: admin123")
+            #    st.write("**Operador Inventario:**")
+            #    st.code("Usuario: inventario / Contraseña: inventario123")
+            #    st.write("**Usuario Consulta:**")
+            #    st.code("Usuario: consulta / Contraseña: consulta123")
     
     st.markdown("---")
     st.caption("📦 Sistema de Conteo de Inventario • v2.0 (con marcas)")
