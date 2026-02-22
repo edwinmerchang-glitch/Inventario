@@ -275,7 +275,7 @@ def mostrar_login():
             #    st.code("Usuario: consulta / Contraseña: consulta123")
     
     st.markdown("---")
-    st.caption("📦 Sistema de Conteo de Inventario • v2.0 (con marcas)")
+    st.caption("📦 Sistema de Conteo de Inventario • v2.0 creado por Edwin Merchan")
 
 # ======================================================
 # BARRA LATERAL CON NAVEGACIÓN
