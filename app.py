@@ -232,11 +232,17 @@ def actualizar_resumen_conteo(usuario, codigo, producto, area, stock_sistema, nu
         return False
 
 # ======================================================
-# PÁGINA DE LOGIN
+# PÁGINA DE LOGIN (CORREGIDA - TÍTULO CENTRADO)
 # ======================================================
 def mostrar_login():
-    """Mostrar página de login"""
-    st.title("🔐 Sistema de Conteo de Inventario")
+    """Mostrar página de login con título centrado"""
+    # Título centrado usando HTML + CSS
+    st.markdown("""
+        <h1 style='text-align: center; color: #1E88E5; font-size: 2.5rem; margin-bottom: 1rem;'>
+            🔐 Sistema de Conteo de Inventario
+        </h1>
+    """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
     with st.container():
@@ -244,7 +250,7 @@ def mostrar_login():
         
         with col2:
             with st.form("login_form"):
-                st.subheader("Inicio de Sesión")
+                st.markdown("<h3 style='text-align: center;'>Inicio de Sesión</h3>", unsafe_allow_html=True)
                 
                 username = st.text_input("Usuario", placeholder="Ingrese su usuario")
                 password = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña")
@@ -265,17 +271,9 @@ def mostrar_login():
                             st.error("❌ Usuario o contraseña incorrectos")
                     else:
                         st.warning("⚠️ Complete todos los campos")
-            
-            #with st.expander("🧪 Credenciales de prueba", expanded=False):
-            #    st.write("**Administrador:**")
-            #    st.code("Usuario: admin / Contraseña: admin123")
-            #    st.write("**Operador Inventario:**")
-            #    st.code("Usuario: inventario / Contraseña: inventario123")
-            #    st.write("**Usuario Consulta:**")
-            #    st.code("Usuario: consulta / Contraseña: consulta123")
     
     st.markdown("---")
-    st.caption("📦 Sistema de Conteo de Inventario • v2.0 creado por Edwin Merchan")
+    st.markdown("<p style='text-align: center; color: gray;'>📦 Sistema de Conteo de Inventario • v2.0 creado por Edwin Merchan</p>", unsafe_allow_html=True)
 
 # ======================================================
 # BARRA LATERAL CON NAVEGACIÓN
