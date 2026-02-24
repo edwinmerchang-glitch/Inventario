@@ -1341,10 +1341,10 @@ def mostrar_conteo_fisico():
                     st.rerun()
 
 # ======================================================
-# 5️⃣ PÁGINA: REPORTES POR MARCA (VERSIÓN CON TEXTO NEGRO)
+# 5️⃣ PÁGINA: REPORTES POR MARCA (VERSIÓN SIN TABLA RESUMEN)
 # ======================================================
 def mostrar_reportes_marca():
-    """Mostrar reportes detallados por marca - VERSIÓN CON TEXTO NEGRO"""
+    """Mostrar reportes detallados por marca - VERSIÓN SIN TABLA RESUMEN"""
     st.title("🏷️ Reporte por Marcas")
     st.markdown("---")
     
@@ -1376,76 +1376,6 @@ def mostrar_reportes_marca():
         if not marcas:
             st.warning("No hay marcas disponibles")
             return
-        
-        # Crear resumen por marca
-        resumen_marcas = []
-        
-        for marca in marcas:
-            productos_marca = stock_df[stock_df['marca'] == marca]
-            
-            if not escaneos_df.empty:
-                escaneos_marca = escaneos_df[escaneos_df['marca'] == marca]
-                productos_escaneados = escaneos_marca['codigo'].nunique()
-                productos_no_escaneados = len(productos_marca) - productos_escaneados
-                stock_total = productos_marca['stock_sistema'].sum()
-                total_contado = escaneos_marca['cantidad_escaneada'].sum() if not escaneos_marca.empty else 0
-                
-                if not escaneos_marca.empty:
-                    resumen_productos = escaneos_marca.groupby('codigo').agg({
-                        'cantidad_escaneada': 'sum'
-                    }).reset_index()
-                    
-                    stock_dict = dict(zip(productos_marca['codigo'], productos_marca['stock_sistema']))
-                    resumen_productos['stock_sistema'] = resumen_productos['codigo'].map(stock_dict).fillna(0)
-                    resumen_productos['diferencia'] = resumen_productos['cantidad_escaneada'] - resumen_productos['stock_sistema']
-                    diferencia_neta = resumen_productos['diferencia'].sum()
-                else:
-                    diferencia_neta = 0
-                
-                porcentaje_avance = (productos_escaneados / len(productos_marca) * 100) if len(productos_marca) > 0 else 0
-            else:
-                productos_escaneados = 0
-                productos_no_escaneados = len(productos_marca)
-                stock_total = productos_marca['stock_sistema'].sum()
-                total_contado = 0
-                diferencia_neta = 0
-                porcentaje_avance = 0
-            
-            resumen_marcas.append({
-                'marca': marca,
-                'total_productos': len(productos_marca),
-                'productos_contados': productos_escaneados,
-                'productos_no_escaneados': productos_no_escaneados,
-                'porcentaje_avance': round(porcentaje_avance, 1),
-                'stock_total_sistema': int(stock_total),
-                'total_contado': int(total_contado),
-                'diferencia_neta': int(diferencia_neta)
-            })
-        
-        # Mostrar resumen general
-        st.subheader("📊 Resumen General por Marcas")
-        df_resumen = pd.DataFrame(resumen_marcas)
-        df_display = df_resumen.copy()
-        df_display['% Avance'] = df_display['porcentaje_avance'].apply(lambda x: f"{x}%")
-        df_display['diferencia_neta'] = df_display['diferencia_neta'].apply(lambda x: f"{x:+,d}")
-        
-        st.dataframe(
-            df_display[['marca', 'total_productos', 'productos_contados', 
-                        'productos_no_escaneados', '% Avance', 'stock_total_sistema', 
-                        'total_contado', 'diferencia_neta']],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                'marca': 'Marca',
-                'total_productos': 'Total Prod.',
-                'productos_contados': 'Contados',
-                'productos_no_escaneados': 'No Escaneados',
-                '% Avance': 'Avance',
-                'stock_total_sistema': 'Stock Sis.',
-                'total_contado': 'Total Contado',
-                'diferencia_neta': 'Dif. Neta'
-            }
-        )
         
         st.markdown("---")
         
@@ -1554,7 +1484,6 @@ def mostrar_reportes_marca():
                     # Formatear la columna Diferencia
                     df_tabla['Diferencia'] = df_tabla['Diferencia'].apply(lambda x: f"{int(x):+d}")
                     
-                    # SIN APLICAR COLORES - texto normal negro
                     # Mostrar la tabla sin estilos de color
                     st.dataframe(
                         df_tabla,
