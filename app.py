@@ -1341,7 +1341,7 @@ def mostrar_conteo_fisico():
                     st.rerun()
 
 # ======================================================
-# 5️⃣ PÁGINA: REPORTES POR MARCA (VERSIÓN CON TABLA EXACTA)
+# 5️⃣ PÁGINA: REPORTES POR MARCA (VERSIÓN CON TABLA EXACTA - TEXTO NORMAL)
 # ======================================================
 def mostrar_reportes_marca():
     """Mostrar reportes detallados por marca - VERSIÓN CON TABLA EXACTA"""
@@ -1498,22 +1498,22 @@ def mostrar_reportes_marca():
                     sobrantes = len(productos_marca[productos_marca['diferencia'] > 0])
                     faltantes = len(productos_marca[productos_marca['diferencia'] < 0])
                     
-                    # Mostrar métricas
+                    # Mostrar métricas (SIN NEGRILLA)
                     col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
-                        st.metric("**Total Productos**", total_prod)
+                        st.metric("Total Productos", total_prod)
                     with col2:
-                        st.metric("**Productos Contados**", contados)
+                        st.metric("Productos Contados", contados)
                     with col3:
-                        st.metric("**No Escaneados**", no_escaneados)
+                        st.metric("No Escaneados", no_escaneados)
                     with col4:
-                        st.metric("**Stock Total**", int(productos_marca['stock_sistema'].sum()))
+                        st.metric("Stock Total", int(productos_marca['stock_sistema'].sum()))
                     with col5:
-                        st.metric("**Diferencia Neta**", f"{int(productos_marca['diferencia'].sum()):+,d}")
+                        st.metric("Diferencia Neta", f"{int(productos_marca['diferencia'].sum()):+,d}")
                     
                     st.markdown("---")
                     
-                    # Distribución por Estado
+                    # Distribución por Estado (SIN NEGRILLA)
                     st.subheader("📊 Distribución por Estado")
                     col_est1, col_est2, col_est3 = st.columns(3)
                     with col_est1:
@@ -1545,16 +1545,16 @@ def mostrar_reportes_marca():
                     # Formatear la columna Diferencia para que muestre el signo
                     df_tabla['Diferencia'] = df_tabla['Diferencia'].apply(lambda x: f"{int(x):+d}")
                     
-                    # Función para aplicar color al estado
+                    # Función para aplicar color al estado (SIN NEGRILLA)
                     def color_estado(val):
                         if 'Faltante' in val:
-                            return 'color: red; font-weight: bold'
+                            return 'color: red;'  # Solo color rojo, sin negrilla
                         elif 'Sobrante' in val:
-                            return 'color: orange; font-weight: bold'
+                            return 'color: orange;'  # Solo color naranja, sin negrilla
                         elif 'Exacto' in val:
-                            return 'color: green; font-weight: bold'
-                        return ''
-                    
+                            return 'color: green;'  # Solo color verde, sin negrilla
+                        return 'color: black;'  # Texto negro normal
+        
                     # Aplicar estilo a la columna Estado
                     styled_df = df_tabla.style.applymap(color_estado, subset=['Estado'])
                     
@@ -1564,14 +1564,14 @@ def mostrar_reportes_marca():
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            'Código': st.column_config.TextColumn('Código', width='medium'),
-                            'Producto': st.column_config.TextColumn('Producto', width='large'),
-                            'Marca': st.column_config.TextColumn('Marca', width='medium'),
-                            'Área': st.column_config.TextColumn('Área', width='medium'),
+                            'Código': st.column_config.TextColumn('Código'),
+                            'Producto': st.column_config.TextColumn('Producto'),
+                            'Marca': st.column_config.TextColumn('Marca'),
+                            'Área': st.column_config.TextColumn('Área'),
                             'Stock Sis.': st.column_config.NumberColumn('Stock Sis.', format="%d"),
                             'Conteo': st.column_config.NumberColumn('Conteo', format="%d"),
-                            'Diferencia': st.column_config.TextColumn('Diferencia', width='small'),
-                            'Estado': st.column_config.TextColumn('Estado', width='medium')
+                            'Diferencia': st.column_config.TextColumn('Diferencia'),
+                            'Estado': st.column_config.TextColumn('Estado')
                         }
                     )
                     
