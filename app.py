@@ -180,26 +180,48 @@ def cargar_escaneos_detallados():
     else:
         return pd.DataFrame(columns=["timestamp", "usuario", "codigo", "producto", "area", "cantidad_escaneada", "total_acumulado", "stock_sistema", "tipo_operacion"])
 
+# ======================================================
+# FUNCIÓN CORREGIDA: GUARDAR ESCANEO DETALLADO CON MARCA
+# ======================================================
 def guardar_escaneo_detallado(escaneo_data):
-    """Guardar UN escaneo individual PERMANENTEMENTE"""
+    """Guardar UN escaneo individual PERMANENTEMENTE con marca incluida"""
     try:
+        # Asegurar tipos de datos
         escaneo_data['cantidad_escaneada'] = int(escaneo_data['cantidad_escaneada'])
         escaneo_data['total_acumulado'] = int(escaneo_data['total_acumulado'])
         escaneo_data['stock_sistema'] = int(escaneo_data['stock_sistema'])
         
-        nuevo_registro = pd.DataFrame([escaneo_data])
+        # Asegurar que la marca esté presente
+        if 'marca' not in escaneo_data:
+            escaneo_data['marca'] = 'SIN MARCA'
+        
+        # Definir el orden de columnas para consistencia
+        columnas_ordenadas = ['timestamp', 'usuario', 'codigo', 'producto', 'marca', 'area', 
+                             'cantidad_escaneada', 'total_acumulado', 'stock_sistema', 'tipo_operacion']
+        
+        # Crear DataFrame con el orden correcto
+        nuevo_registro = pd.DataFrame([{col: escaneo_data.get(col, None) for col in columnas_ordenadas}])
         
         if os.path.exists(ARCHIVO_ESCANEOS):
             df_existente = pd.read_csv(ARCHIVO_ESCANEOS)
-            for col in nuevo_registro.columns:
+            
+            # Asegurar que el DataFrame existente tenga todas las columnas necesarias
+            for col in columnas_ordenadas:
                 if col not in df_existente.columns:
                     df_existente[col] = None
+            
+            # Reordenar columnas del df_existente
+            df_existente = df_existente[columnas_ordenadas]
+            
+            # Concatenar
             df_final = pd.concat([df_existente, nuevo_registro], ignore_index=True)
         else:
             df_final = nuevo_registro
         
+        # Guardar
         df_final.to_csv(ARCHIVO_ESCANEOS, index=False)
         
+        # Actualizar sesión
         if 'historial_escaneos' not in st.session_state:
             st.session_state.historial_escaneos = []
         st.session_state.historial_escaneos.append(escaneo_data)
@@ -208,8 +230,48 @@ def guardar_escaneo_detallado(escaneo_data):
     except Exception as e:
         return False, f"Error al guardar escaneo: {str(e)}"
 
-def actualizar_resumen_conteo(usuario, codigo, producto, area, stock_sistema, nuevo_total):
-    """Actualizar el resumen diario de conteos"""
+# ======================================================
+# FUNCIÓN CORREGIDA: CARGAR ESCANEOS DETALLADOS
+# ======================================================
+def cargar_escaneos_detallados():
+    """Cargar escaneos desde CSV asegurando columna marca"""
+    columnas_requeridas = ["timestamp", "usuario", "codigo", "producto", "marca", "area", 
+                          "cantidad_escaneada", "total_acumulado", "stock_sistema", "tipo_operacion"]
+    
+    if os.path.exists(ARCHIVO_ESCANEOS):
+        try:
+            df = pd.read_csv(ARCHIVO_ESCANEOS)
+            
+            # Asegurar que todas las columnas requeridas existan
+            for col in columnas_requeridas:
+                if col not in df.columns:
+                    if col == 'marca':
+                        df[col] = 'SIN MARCA'  # Valor por defecto para marca
+                    else:
+                        df[col] = None
+            
+            # Convertir tipos de datos
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+            if 'cantidad_escaneada' in df.columns:
+                df['cantidad_escaneada'] = pd.to_numeric(df['cantidad_escaneada'], errors='coerce').fillna(0).astype(int)
+            if 'total_acumulado' in df.columns:
+                df['total_acumulado'] = pd.to_numeric(df['total_acumulado'], errors='coerce').fillna(0).astype(int)
+            if 'stock_sistema' in df.columns:
+                df['stock_sistema'] = pd.to_numeric(df['stock_sistema'], errors='coerce').fillna(0).astype(int)
+            
+            return df
+        except Exception as e:
+            print(f"Error cargando escaneos: {e}")
+            return pd.DataFrame(columns=columnas_requeridas)
+    else:
+        return pd.DataFrame(columns=columnas_requeridas)
+
+# ======================================================
+# FUNCIÓN CORREGIDA: ACTUALIZAR RESUMEN CONTEO (INCLUYE MARCA)
+# ======================================================
+def actualizar_resumen_conteo(usuario, codigo, producto, area, stock_sistema, nuevo_total, marca='SIN MARCA'):
+    """Actualizar el resumen diario de conteos (ahora incluye marca)"""
     try:
         conteos_df = cargar_conteos()
         hoy = datetime.now().strftime("%Y-%m-%d")
@@ -221,8 +283,18 @@ def actualizar_resumen_conteo(usuario, codigo, producto, area, stock_sistema, nu
         if mask.any() and not conteos_df[mask].empty:
             conteos_df.loc[mask, ["conteo_fisico", "diferencia"]] = [nuevo_total, nuevo_total - stock_sistema]
         else:
-            nuevo = pd.DataFrame([[f"{hoy} {datetime.now().strftime('%H:%M:%S')}", usuario, codigo, producto, area, stock_sistema, nuevo_total, nuevo_total - stock_sistema]], 
-                                columns=conteos_df.columns)
+            nuevo = pd.DataFrame([[
+                f"{hoy} {datetime.now().strftime('%H:%M:%S')}", 
+                usuario, 
+                codigo, 
+                producto,
+                marca,  # Agregamos marca
+                area, 
+                stock_sistema, 
+                nuevo_total, 
+                nuevo_total - stock_sistema
+            ]], columns=["fecha", "usuario", "codigo", "producto", "marca", "area", "stock_sistema", "conteo_fisico", "diferencia"])
+            
             conteos_df = pd.concat([conteos_df, nuevo], ignore_index=True)
         
         guardar_conteos(conteos_df)
@@ -230,6 +302,101 @@ def actualizar_resumen_conteo(usuario, codigo, producto, area, stock_sistema, nu
     except Exception as e:
         print(f"Error actualizando resumen: {e}")
         return False
+
+# ======================================================
+# FUNCIÓN CORREGIDA: CARGAR CONTEO (INCLUYE MARCA)
+# ======================================================
+def cargar_conteos():
+    """Cargar conteos desde CSV con soporte para marca"""
+    columnas_requeridas = ["fecha", "usuario", "codigo", "producto", "marca", "area", "stock_sistema", "conteo_fisico", "diferencia"]
+    
+    if os.path.exists(ARCHIVO_CONTEOS):
+        df = pd.read_csv(ARCHIVO_CONTEOS)
+        
+        # Asegurar que todas las columnas requeridas existan
+        for col in columnas_requeridas:
+            if col not in df.columns:
+                if col == 'marca':
+                    df[col] = 'SIN MARCA'
+                else:
+                    df[col] = None
+        
+        return df
+    else:
+        return pd.DataFrame(columns=columnas_requeridas)
+
+# ======================================================
+# MODIFICAR LA FUNCIÓN mostrar_conteo_fisico PARA INCLUIR MARCA
+# ======================================================
+# Busca esta sección en mostrar_conteo_fisico (aproximadamente línea 680-700)
+# y reemplázala con:
+
+def procesar_escaneo_en_conteo(codigo_limpio, cantidad, producto_encontrado):
+    """Función auxiliar para procesar escaneo (para mantener el código organizado)"""
+    prod = producto_encontrado.iloc[0]
+    
+    # Obtener marca (asegurar que existe)
+    marca = prod.get("marca", "SIN MARCA")
+    if pd.isna(marca) or marca == "":
+        marca = "SIN MARCA"
+    
+    # Calcular total anterior
+    total_anterior = total_escaneado_hoy(st.session_state.nombre, codigo_limpio)
+    nuevo_total = total_anterior + cantidad
+
+    # --- GUARDAR ESCANEO CON MARCA ---
+    timestamp_actual = datetime.now()
+    
+    escaneo_data = {
+        "timestamp": timestamp_actual,
+        "usuario": st.session_state.nombre,
+        "codigo": codigo_limpio,
+        "producto": prod["producto"],
+        "marca": marca,  # ¡Importante!
+        "area": prod["area"],
+        "cantidad_escaneada": int(cantidad),
+        "total_acumulado": int(nuevo_total),
+        "stock_sistema": int(prod["stock_sistema"]),
+        "tipo_operacion": "ESCANEO"
+    }
+    
+    # Usar la función corregida
+    guardar_escaneo_detallado(escaneo_data)
+
+    # Registrar en base de datos (si aplica)
+    db.registrar_conteo(
+        st.session_state.nombre,
+        codigo_limpio,
+        prod["producto"],
+        marca,  # Pasar marca
+        prod["area"],
+        int(prod["stock_sistema"]),
+        nuevo_total
+    )
+
+    # Actualizar resumen de conteos con marca
+    actualizar_resumen_conteo(
+        st.session_state.nombre, 
+        codigo_limpio, 
+        prod["producto"],
+        prod["area"], 
+        int(prod["stock_sistema"]), 
+        nuevo_total,
+        marca  # Nuevo parámetro
+    )
+
+    # Actualizar sesión
+    st.session_state.producto_actual_conteo = {
+        'codigo': codigo_limpio,
+        'nombre': prod["producto"],
+        'marca': marca,
+        'area': prod["area"],
+        'stock_sistema': int(prod["stock_sistema"])
+    }
+    st.session_state.conteo_actual_session = nuevo_total
+    st.session_state.total_escaneos_session += 1
+
+    return True
 
 # ======================================================
 # PÁGINA DE LOGIN (CORREGIDA - TÍTULO CENTRADO)
