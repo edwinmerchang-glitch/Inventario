@@ -133,12 +133,21 @@ def limpiar_codigo(codigo):
     return str(codigo).strip().replace("\n", "").replace("\r", "")
 
 def cargar_stock():
-    """Cargar stock desde la base de datos"""
-    return db.obtener_todos_productos(st.session_state.get('marca_seleccionada', 'Todas'))
+    """Cargar stock desde la base de datos asegurando columna marca"""
+    df = db.obtener_todos_productos(st.session_state.get('marca_seleccionada', 'Todas'))
+    
+    # Asegurar que la columna 'marca' exista
+    if 'marca' not in df.columns:
+        df['marca'] = 'SIN MARCA'
+    
+    return df
 
 def guardar_stock(df):
     """Guardar stock (adaptador para mantener compatibilidad)"""
-    # Esta función ahora usará la base de datos
+    # Asegurar que la columna 'marca' exista
+    if 'marca' not in df.columns:
+        df['marca'] = 'SIN MARCA'
+    
     for _, row in df.iterrows():
         db.guardar_producto(
             row['codigo'], 
