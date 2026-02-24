@@ -510,7 +510,7 @@ def mostrar_sidebar():
             st.rerun()
 
 # ======================================================
-# 1️⃣ PÁGINA: DASHBOARD
+# 1️⃣ PÁGINA: DASHBOARD (SECCIÓN DE MÉTRICAS CORREGIDA)
 # ======================================================
 def mostrar_dashboard():
     """Mostrar dashboard principal"""
@@ -539,14 +539,25 @@ def mostrar_dashboard():
             st.metric("📱 Escaneos totales", 0)
     
     with col4:
-        if not conteos_df.empty:
-            exactos = len(conteos_df[conteos_df["diferencia"] == 0])
-            porcentaje = (exactos / total_conteos) * 100 if total_conteos > 0 else 0
-            st.metric("🎯 Precisión", f"{porcentaje:.1f}%")
+        if not conteos_df.empty and not escaneos_df.empty:
+            # Obtener productos únicos que han sido escaneados (contados)
+            productos_escaneados = escaneos_df['codigo'].nunique()
+            
+            # De esos productos escaneados, cuántos tienen diferencia 0 (exactos)
+            # Necesitamos obtener el último conteo de cada producto
+            ultimos_conteos = conteos_df.sort_values('fecha').groupby('codigo').last().reset_index()
+            exactos = len(ultimos_conteos[ultimos_conteos['diferencia'] == 0])
+            
+            # Calcular precisión sobre productos contados, no sobre total
+            if productos_escaneados > 0:
+                precision = (exactos / productos_escaneados) * 100
+            else:
+                precision = 0
+                
+            st.metric("🎯 Precisión", f"{precision:.1f}%", 
+                     help=f"Basado en {exactos} exactos de {productos_escaneados} productos contados")
         else:
-            st.metric("🎯 Precisión", "0%")
-    
-    st.markdown("---")
+            st.metric("🎯 Precisión", "0%", help="No hay datos de conteo")
     
     # ======================================================
     # NUEVA SECCIÓN: RESUMEN POR ESTADO (COMO EN LA IMAGEN)
