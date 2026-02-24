@@ -1478,7 +1478,7 @@ def mostrar_reportes_marca():
                     
                     productos_marca['diferencia'] = productos_marca['conteo_fisico'] - productos_marca['stock_sistema']
                     productos_marca['estado'] = productos_marca['diferencia'].apply(
-                        lambda x: '✅ Exacto' if x == 0 else ('⚠️ Sobrante' if x > 0 else '✅ Faltante')
+                        lambda x: '✅ Exacto' if x == 0 else ('⚠️ Sobrante' if x > 0 else '🔻 Faltante')
                     )
                 else:
                     productos_marca['conteo_fisico'] = 0
@@ -1519,9 +1519,9 @@ def mostrar_reportes_marca():
                     with col_est1:
                         st.metric("✅ Exactos", exactos)
                     with col_est2:
-                        st.metric("⚠️ Sobrantes", sobrantes)
+                        st.metric("⚠️ Sobrante", sobrantes)
                     with col_est3:
-                        st.metric("✅ Faltantes", faltantes)
+                        st.metric("🔻 Faltante", faltantes)
                     
                     st.markdown("---")
                     
