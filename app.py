@@ -1645,12 +1645,12 @@ def mostrar_reportes():
         mostrar_historial_completo()
 
 def mostrar_resumen_general():
-    """Mostrar resumen general de conteos - CON EXPANDER DE DIFERENCIAS DEBAJO DE LA TABLA"""
+    """Mostrar resumen general de conteos - CON MARCA INCLUIDA"""
     conteos_df = cargar_conteos()
     escaneos_df = cargar_escaneos_detallados()
     
     # ==============================================
-    # SECCIÓN 1: TABLA DE PRODUCTOS (PRIMERO)
+    # SECCIÓN 1: TABLA DE PRODUCTOS (PRIMERO) - CON MARCA
     # ==============================================
     if not escaneos_df.empty:
         st.subheader("📋 Detalle de productos escaneados")
@@ -1658,12 +1658,16 @@ def mostrar_resumen_general():
         # Asegurar que los códigos sean strings
         escaneos_df['codigo'] = escaneos_df['codigo'].astype(str)
         
-        # Crear resumen por producto
-        resumen_precision = escaneos_df.groupby(['codigo', 'producto', 'area']).agg({
+        # Verificar si existe la columna 'marca' en escaneos_df
+        if 'marca' not in escaneos_df.columns:
+            escaneos_df['marca'] = 'SIN MARCA'
+        
+        # Crear resumen por producto (INCLUYENDO MARCA)
+        resumen_precision = escaneos_df.groupby(['codigo', 'producto', 'marca', 'area']).agg({
             'cantidad_escaneada': 'sum'
         }).reset_index()
         
-        resumen_precision.columns = ['codigo', 'producto', 'area', 'conteo_fisico']
+        resumen_precision.columns = ['codigo', 'producto', 'marca', 'area', 'conteo_fisico']
         
         # Cargar stock
         stock_df = cargar_stock()
@@ -1696,27 +1700,36 @@ def mostrar_resumen_general():
         resumen_precision['abs_diferencia'] = resumen_precision['diferencia'].abs()
         resumen_precision = resumen_precision.sort_values('abs_diferencia', ascending=False).drop('abs_diferencia', axis=1)
         
-        # Mostrar tabla de productos
+        # Mostrar tabla de productos CON MARCA
+        columnas_mostrar = ['codigo', 'producto', 'marca', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']
+        
         st.dataframe(
-            resumen_precision[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
-            width='stretch',
+            resumen_precision[columnas_mostrar],
+            use_container_width=True,
             hide_index=True,
             column_config={
-                'diferencia': st.column_config.NumberColumn(format="%+d")
+                'codigo': 'Código',
+                'producto': 'Producto',
+                'marca': 'Marca',
+                'area': 'Área',
+                'stock_sistema': 'Stock Sis.',
+                'conteo_fisico': 'Conteo',
+                'diferencia': st.column_config.NumberColumn('Diferencia', format="%+d"),
+                'estado': 'Estado'
             }
         )
         
         st.caption(f"📊 Mostrando {len(resumen_precision)} productos escaneados")
         
         # ==============================================
-        # EXPANDER: VER SOLO PRODUCTOS CON DIFERENCIAS (JUSTO DEBAJO DE LA TABLA)
+        # EXPANDER: VER SOLO PRODUCTOS CON DIFERENCIAS (CON MARCA)
         # ==============================================
         with st.expander("🔍 Ver solo productos con diferencias"):
             productos_con_diferencia = resumen_precision[resumen_precision['diferencia'] != 0].copy()
             if not productos_con_diferencia.empty:
                 st.dataframe(
-                    productos_con_diferencia[['codigo', 'producto', 'area', 'stock_sistema', 'conteo_fisico', 'diferencia', 'estado']],
-                    width='stretch',
+                    productos_con_diferencia[columnas_mostrar],
+                    use_container_width=True,
                     hide_index=True,
                     column_config={
                         'diferencia': st.column_config.NumberColumn(format="%+d")
@@ -1732,7 +1745,7 @@ def mostrar_resumen_general():
         st.markdown("---")
     
     # ==============================================
-    # SECCIÓN 2: MÉTRICAS PRINCIPALES
+    # SECCIÓN 2: MÉTRICAS PRINCIPALES (sin cambios)
     # ==============================================
     st.subheader("📈 Métricas Principales")
     
@@ -1775,15 +1788,29 @@ def mostrar_resumen_general():
     st.markdown("---")
     
     # ==============================================
-    # SECCIÓN 3: ANÁLISIS DE PRECISIÓN (AL FINAL)
+    # SECCIÓN 3: ANÁLISIS DE PRECISIÓN (CON FILTRO POR MARCA)
     # ==============================================
     st.subheader("🎯 Análisis de Precisión")
     
     if not conteos_df.empty and not escaneos_df.empty and 'resumen_precision' in locals():
-        total_productos = len(resumen_precision)
-        exactos = len(resumen_precision[resumen_precision['diferencia'] == 0])
-        sobrantes = len(resumen_precision[resumen_precision['diferencia'] > 0])
-        faltantes = len(resumen_precision[resumen_precision['diferencia'] < 0])
+        # Agregar filtro por marca
+        if 'marca' in resumen_precision.columns:
+            marcas_disponibles = ['Todas'] + sorted(resumen_precision['marca'].unique().tolist())
+            marca_filtro = st.selectbox("🏷️ Filtrar por marca", marcas_disponibles, key="filtro_marca_analisis")
+            
+            # Aplicar filtro
+            if marca_filtro != 'Todas':
+                resumen_filtrado = resumen_precision[resumen_precision['marca'] == marca_filtro]
+            else:
+                resumen_filtrado = resumen_precision
+        else:
+            resumen_filtrado = resumen_precision
+            marca_filtro = 'Todas'
+        
+        total_productos = len(resumen_filtrado)
+        exactos = len(resumen_filtrado[resumen_filtrado['diferencia'] == 0])
+        sobrantes = len(resumen_filtrado[resumen_filtrado['diferencia'] > 0])
+        faltantes = len(resumen_filtrado[resumen_filtrado['diferencia'] < 0])
         
         col_p1, col_p2, col_p3, col_p4 = st.columns(4)
         
@@ -1800,11 +1827,11 @@ def mostrar_resumen_general():
                      help="Productos con conteo físico MENOR al stock del sistema")
         
         with col_p4:
-            diferencia_neta = resumen_precision['diferencia'].sum()
+            diferencia_neta = resumen_filtrado['diferencia'].sum()
             st.metric("📊 Diferencia neta", f"{diferencia_neta:+,d}",
                      help="Suma total de todas las diferencias (positivas y negativas)")
         
-        # Resumen visual adicional (opcional)
+        # Resumen visual adicional
         with st.expander("📊 Ver resumen estadístico detallado"):
             col_res1, col_res2 = st.columns(2)
             
@@ -1817,13 +1844,13 @@ def mostrar_resumen_general():
             with col_res2:
                 st.write("**Magnitud de diferencias:**")
                 if sobrantes > 0:
-                    promedio_sobrante = resumen_precision[resumen_precision['diferencia'] > 0]['diferencia'].mean()
-                    max_sobrante = resumen_precision[resumen_precision['diferencia'] > 0]['diferencia'].max()
+                    promedio_sobrante = resumen_filtrado[resumen_filtrado['diferencia'] > 0]['diferencia'].mean()
+                    max_sobrante = resumen_filtrado[resumen_filtrado['diferencia'] > 0]['diferencia'].max()
                     st.write(f"• Promedio sobrante: +{promedio_sobrante:.1f}")
                     st.write(f"• Máximo sobrante: +{max_sobrante}")
                 if faltantes > 0:
-                    promedio_faltante = abs(resumen_precision[resumen_precision['diferencia'] < 0]['diferencia'].mean())
-                    max_faltante = abs(resumen_precision[resumen_precision['diferencia'] < 0]['diferencia'].min())
+                    promedio_faltante = abs(resumen_filtrado[resumen_filtrado['diferencia'] < 0]['diferencia'].mean())
+                    max_faltante = abs(resumen_filtrado[resumen_filtrado['diferencia'] < 0]['diferencia'].min())
                     st.write(f"• Promedio faltante: -{promedio_faltante:.1f}")
                     st.write(f"• Máximo faltante: -{max_faltante}")
     
