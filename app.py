@@ -1610,10 +1610,10 @@ def mostrar_historial_completo():
         st.info("No hay historial de escaneos")
 
 # ======================================================
-# 7️⃣ PÁGINA: GESTIÓN DE USUARIOS
+# 7️⃣ PÁGINA: GESTIÓN DE USUARIOS (MODIFICADA CON EDICIÓN)
 # ======================================================
 def mostrar_gestion_usuarios():
-    """Mostrar página de gestión de usuarios"""
+    """Mostrar página de gestión de usuarios con opciones de edición"""
     if not tiene_permiso("admin"):
         st.error("⛔ No tienes permisos para acceder a esta sección")
         st.info("Solo administradores pueden gestionar usuarios")
@@ -1624,40 +1624,41 @@ def mostrar_gestion_usuarios():
     
     usuarios_df = cargar_usuarios()
     
-    st.subheader("➕ Crear nuevo usuario")
-    
-    with st.form("form_nuevo_usuario_crear", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            nuevo_username = st.text_input("Nombre de usuario *")
-            nuevo_nombre = st.text_input("Nombre completo *")
-        
-        with col2:
-            nuevo_password = st.text_input("Contraseña *", type="password")
-            nuevo_rol = st.selectbox("Rol *", ["admin", "inventario", "consulta"])
-        
-        if st.form_submit_button("👤 Crear Usuario", use_container_width=True):
-            if nuevo_username and nuevo_nombre and nuevo_password:
-                exito, mensaje = crear_usuario(nuevo_username, nuevo_nombre, nuevo_password, nuevo_rol)
-                if exito:
-                    st.success(mensaje)
-                    st.rerun()
+    # ======================================================
+    # SECCIÓN: CREAR NUEVO USUARIO
+    # ======================================================
+    with st.expander("➕ Crear nuevo usuario", expanded=False):
+        with st.form("form_nuevo_usuario_crear", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                nuevo_username = st.text_input("Nombre de usuario *")
+                nuevo_nombre = st.text_input("Nombre completo *")
+            
+            with col2:
+                nuevo_password = st.text_input("Contraseña *", type="password")
+                nuevo_rol = st.selectbox("Rol *", ["admin", "inventario", "consulta"])
+            
+            if st.form_submit_button("👤 Crear Usuario", use_container_width=True):
+                if nuevo_username and nuevo_nombre and nuevo_password:
+                    exito, mensaje = crear_usuario(nuevo_username, nuevo_nombre, nuevo_password, nuevo_rol)
+                    if exito:
+                        st.success(mensaje)
+                        st.rerun()
+                    else:
+                        st.error(mensaje)
                 else:
-                    st.error(mensaje)
-            else:
-                st.error("❌ Todos los campos son obligatorios")
+                    st.error("❌ Todos los campos son obligatorios")
     
     st.markdown("---")
     
+    # ======================================================
+    # SECCIÓN: LISTA DE USUARIOS CON OPCIONES DE EDICIÓN
+    # ======================================================
     st.subheader("📋 Usuarios del sistema")
     
     if not usuarios_df.empty:
-        usuarios_display = usuarios_df.copy()
-        usuarios_display["password"] = "••••••••"
-        
-        st.dataframe(usuarios_display, use_container_width=True)
-        
+        # Mostrar estadísticas
         col_stat1, col_stat2, col_stat3 = st.columns(3)
         
         with col_stat1:
@@ -1671,8 +1672,232 @@ def mostrar_gestion_usuarios():
         with col_stat3:
             admins = len(usuarios_df[usuarios_df["rol"] == "admin"])
             st.metric("Administradores", admins)
+        
+        st.markdown("---")
+        
+        # Mostrar cada usuario con opciones de edición
+        for idx, usuario in usuarios_df.iterrows():
+            with st.expander(f"👤 {usuario['nombre']} (@{usuario['username']})", expanded=False):
+                col1, col2, col3 = st.columns([2, 2, 1])
+                
+                with col1:
+                    st.write(f"**Username:** {usuario['username']}")
+                    st.write(f"**Nombre:** {usuario['nombre']}")
+                
+                with col2:
+                    st.write(f"**Rol:** {usuario['rol']}")
+                    st.write(f"**Estado:** {'✅ Activo' if usuario['activo'] == '1' else '❌ Inactivo'}")
+                
+                with col3:
+                    # Botón para editar (abre formulario de edición)
+                    if st.button("✏️ Editar", key=f"edit_{usuario['username']}", use_container_width=True):
+                        st.session_state[f"editando_{usuario['username']}"] = True
+                
+                # Formulario de edición (se muestra si se hizo clic en Editar)
+                if st.session_state.get(f"editando_{usuario['username']}", False):
+                    st.markdown("---")
+                    st.markdown("### 📝 Editar Usuario")
+                    
+                    with st.form(f"form_editar_{usuario['username']}"):
+                        col_edit1, col_edit2 = st.columns(2)
+                        
+                        with col_edit1:
+                            nuevo_nombre_edit = st.text_input("Nombre completo", value=usuario['nombre'])
+                            nuevo_username_edit = st.text_input("Username", value=usuario['username'], disabled=True)  # No permitir cambiar username
+                        
+                        with col_edit2:
+                            nuevo_rol_edit = st.selectbox("Rol", ["admin", "inventario", "consulta"], 
+                                                         index=["admin", "inventario", "consulta"].index(usuario['rol']))
+                            nuevo_estado_edit = st.selectbox("Estado", ["Activo", "Inactivo"],
+                                                            index=0 if usuario['activo'] == '1' else 1)
+                        
+                        nueva_password_edit = st.text_input("Nueva contraseña (dejar en blanco para no cambiar)", type="password")
+                        
+                        col_btn1, col_btn2, col_btn3 = st.columns(3)
+                        
+                        with col_btn1:
+                            if st.form_submit_button("💾 Guardar cambios", type="primary", use_container_width=True):
+                                cambios_realizados = False
+                                
+                                # Actualizar datos
+                                usuarios_df.loc[idx, 'nombre'] = nuevo_nombre_edit
+                                usuarios_df.loc[idx, 'rol'] = nuevo_rol_edit
+                                usuarios_df.loc[idx, 'activo'] = '1' if nuevo_estado_edit == "Activo" else '0'
+                                
+                                # Actualizar contraseña si se proporcionó una nueva
+                                if nueva_password_edit:
+                                    usuarios_df.loc[idx, 'password'] = hash_password(nueva_password_edit)
+                                    cambios_realizados = True
+                                
+                                guardar_usuarios(usuarios_df)
+                                st.session_state[f"editando_{usuario['username']}"] = False
+                                st.success(f"✅ Usuario {usuario['username']} actualizado correctamente")
+                                st.rerun()
+                        
+                        with col_btn2:
+                            if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                                st.session_state[f"editando_{usuario['username']}"] = False
+                                st.rerun()
+                        
+                        with col_btn3:
+                            # Botón para eliminar usuario (solo si no es el último admin)
+                            if usuario['rol'] == 'admin' and len(usuarios_df[usuarios_df['rol'] == 'admin']) == 1:
+                                st.warning("⚠️ Último admin")
+                            else:
+                                if st.form_submit_button("🗑️ Eliminar", type="secondary", use_container_width=True):
+                                    st.session_state[f"eliminar_{usuario['username']}"] = True
+                    
+                    # Confirmación de eliminación
+                    if st.session_state.get(f"eliminar_{usuario['username']}", False):
+                        st.warning(f"⚠️ ¿Estás seguro de eliminar al usuario **{usuario['nombre']}**?")
+                        col_del1, col_del2 = st.columns(2)
+                        
+                        with col_del1:
+                            if st.button("✅ Sí, eliminar", key=f"confirm_del_{usuario['username']}"):
+                                # Eliminar usuario
+                                usuarios_df = usuarios_df[usuarios_df['username'] != usuario['username']]
+                                guardar_usuarios(usuarios_df)
+                                st.session_state[f"eliminar_{usuario['username']}"] = False
+                                st.success(f"✅ Usuario {usuario['username']} eliminado")
+                                st.rerun()
+                        
+                        with col_del2:
+                            if st.button("❌ No, cancelar", key=f"cancel_del_{usuario['username']}"):
+                                st.session_state[f"eliminar_{usuario['username']}"] = False
+                                st.rerun()
     else:
         st.info("No hay usuarios registrados")
+
+# ======================================================
+# FUNCIÓN ADICIONAL: CAMBIAR CONTRASEÑA (OPCIONAL)
+# ======================================================
+def mostrar_cambiar_password():
+    """Función para que el usuario cambie su propia contraseña"""
+    if not st.session_state.autenticado:
+        return
+    
+    st.subheader("🔐 Cambiar mi contraseña")
+    
+    with st.form("form_cambiar_password"):
+        password_actual = st.text_input("Contraseña actual", type="password")
+        nueva_password = st.text_input("Nueva contraseña", type="password")
+        confirmar_password = st.text_input("Confirmar nueva contraseña", type="password")
+        
+        if st.form_submit_button("🔄 Cambiar contraseña", use_container_width=True):
+            if not password_actual or not nueva_password or not confirmar_password:
+                st.error("❌ Todos los campos son obligatorios")
+            elif nueva_password != confirmar_password:
+                st.error("❌ Las contraseñas nuevas no coinciden")
+            else:
+                # Verificar contraseña actual
+                usuarios_df = cargar_usuarios()
+                usuario_actual = usuarios_df[usuarios_df['username'] == st.session_state.usuario].iloc[0]
+                
+                if usuario_actual['password'] == hash_password(password_actual):
+                    # Actualizar contraseña
+                    usuarios_df.loc[usuarios_df['username'] == st.session_state.usuario, 'password'] = hash_password(nueva_password)
+                    guardar_usuarios(usuarios_df)
+                    st.success("✅ Contraseña actualizada correctamente")
+                    st.balloons()
+                else:
+                    st.error("❌ Contraseña actual incorrecta")
+
+# Modificar la barra lateral para incluir cambio de contraseña
+def mostrar_sidebar():
+    """Mostrar barra lateral con navegación"""
+    with st.sidebar:
+        st.title(f"👤 {st.session_state.nombre}")
+        st.write(f"**Rol:** {st.session_state.rol.upper()}")
+        st.write(f"**Usuario:** {st.session_state.usuario}")
+        
+        # Botón para cambiar contraseña (siempre visible)
+        if st.button("🔐 Cambiar contraseña", use_container_width=True, key="btn_cambiar_pass"):
+            st.session_state.mostrar_cambiar_pass = True
+        
+        # Mostrar formulario de cambio de contraseña
+        if st.session_state.get('mostrar_cambiar_pass', False):
+            with st.container():
+                st.markdown("---")
+                with st.form("sidebar_cambiar_pass"):
+                    pass_actual = st.text_input("Actual", type="password", key="side_pass_actual")
+                    pass_nueva = st.text_input("Nueva", type="password", key="side_pass_nueva")
+                    pass_confirm = st.text_input("Confirmar", type="password", key="side_pass_confirm")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.form_submit_button("💾 Guardar", use_container_width=True):
+                            if pass_actual and pass_nueva and pass_confirm:
+                                if pass_nueva == pass_confirm:
+                                    usuarios_df = cargar_usuarios()
+                                    usuario_actual = usuarios_df[usuarios_df['username'] == st.session_state.usuario].iloc[0]
+                                    
+                                    if usuario_actual['password'] == hash_password(pass_actual):
+                                        usuarios_df.loc[usuarios_df['username'] == st.session_state.usuario, 'password'] = hash_password(pass_nueva)
+                                        guardar_usuarios(usuarios_df)
+                                        st.success("✅ Contraseña actualizada")
+                                        st.session_state.mostrar_cambiar_pass = False
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Contraseña actual incorrecta")
+                                else:
+                                    st.error("❌ Las nuevas contraseñas no coinciden")
+                            else:
+                                st.error("❌ Complete todos los campos")
+                    
+                    with col2:
+                        if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                            st.session_state.mostrar_cambiar_pass = False
+                            st.rerun()
+                st.markdown("---")
+        
+        st.markdown("---")
+        
+        st.subheader("📌 Navegación")
+        
+        opciones_disponibles = []
+        opciones_disponibles.append("🏠 Dashboard")
+        
+        if tiene_permiso("inventario"):
+            opciones_disponibles.append("📥 Carga Stock")
+        
+        if tiene_permiso("admin"):
+            opciones_disponibles.append("📤 Importar Excel")
+        
+        if tiene_permiso("inventario"):
+            opciones_disponibles.append("🔢 Conteo Físico")
+        
+        opciones_disponibles.append("📊 Reportes")
+        opciones_disponibles.append("🏷️ Reporte por Marcas")
+        
+        if tiene_permiso("admin"):
+            opciones_disponibles.append("👥 Gestión Usuarios")
+        
+        if tiene_permiso("admin"):
+            opciones_disponibles.append("⚙️ Configuración")
+        
+        for opcion in opciones_disponibles:
+            if st.button(opcion, use_container_width=True,
+                        type="primary" if st.session_state.pagina_actual == opcion else "secondary"):
+                st.session_state.pagina_actual = opcion
+                st.rerun()
+        
+        st.markdown("---")
+        
+        stock_df = cargar_stock()
+        conteos_df = cargar_conteos()
+        
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.metric("📦 Productos", len(stock_df))
+        with col_info2:
+            st.metric("🔢 Conteos", len(conteos_df))
+        
+        st.markdown("---")
+        
+        if st.button("🚪 Cerrar Sesión", use_container_width=True, type="secondary"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
 
 # ======================================================
 # 8️⃣ PÁGINA: CONFIGURACIÓN (ACTUALIZADA - SIN GESTIÓN DE MARCAS)
