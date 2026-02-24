@@ -1341,10 +1341,10 @@ def mostrar_conteo_fisico():
                     st.rerun()
 
 # ======================================================
-# 5️⃣ PÁGINA: REPORTES POR MARCA (VERSIÓN CON MULTISELECT)
+# 5️⃣ PÁGINA: REPORTES POR MARCA (VERSIÓN CON TEXTO NEGRO)
 # ======================================================
 def mostrar_reportes_marca():
-    """Mostrar reportes detallados por marca - VERSIÓN CON MULTISELECT"""
+    """Mostrar reportes detallados por marca - VERSIÓN CON TEXTO NEGRO"""
     st.title("🏷️ Reporte por Marcas")
     st.markdown("---")
     
@@ -1449,12 +1449,12 @@ def mostrar_reportes_marca():
         
         st.markdown("---")
         
-        # Selector de marcas para ver detalle (AHORA CON MULTISELECT)
+        # Selector de marcas para ver detalle (MULTISELECT)
         if marcas:
             marcas_seleccionadas = st.multiselect(
                 "🔍 Seleccionar marcas para ver detalle",
                 options=marcas,
-                default=[marcas[0]] if marcas else [],  # Selecciona la primera por defecto
+                default=[marcas[0]] if marcas else [],
                 help="Puedes seleccionar una o múltiples marcas"
             )
             
@@ -1534,7 +1534,9 @@ def mostrar_reportes_marca():
                     
                     st.markdown("---")
                     
-                    # TABLA DE PRODUCTOS
+                    # ======================================================
+                    # TABLA DE PRODUCTOS CON TEXTO NEGRO
+                    # ======================================================
                     st.subheader("📋 Listado de Productos")
                     
                     # Preparar DataFrame
@@ -1552,24 +1554,22 @@ def mostrar_reportes_marca():
                     # Formatear la columna Diferencia
                     df_tabla['Diferencia'] = df_tabla['Diferencia'].apply(lambda x: f"{int(x):+d}")
                     
-                    # Función para aplicar color al estado
-                    def color_estado(val):
-                        if 'Faltante' in val:
-                            return 'color: red;'
-                        elif 'Sobrante' in val:
-                            return 'color: orange;'
-                        elif 'Exacto' in val:
-                            return 'color: green;'
-                        return 'color: black;'
-                    
-                    # Aplicar estilo
-                    styled_df = df_tabla.style.applymap(color_estado, subset=['Estado'])
-                    
-                    # Mostrar la tabla
+                    # SIN APLICAR COLORES - texto normal negro
+                    # Mostrar la tabla sin estilos de color
                     st.dataframe(
-                        styled_df,
+                        df_tabla,
                         use_container_width=True,
-                        hide_index=True
+                        hide_index=True,
+                        column_config={
+                            'Código': 'Código',
+                            'Producto': 'Producto',
+                            'Marca': 'Marca',
+                            'Área': 'Área',
+                            'Stock Sis.': 'Stock Sis.',
+                            'Conteo': 'Conteo',
+                            'Diferencia': 'Diferencia',
+                            'Estado': 'Estado'
+                        }
                     )
                     
                     # Mostrar total de productos
@@ -1578,7 +1578,7 @@ def mostrar_reportes_marca():
                     # Botón para exportar
                     if st.button("📥 Exportar detalle a CSV", use_container_width=True):
                         csv = productos_marcas.to_csv(index=False).encode('utf-8')
-                        marcas_str = "_".join(marcas_seleccionadas)[:50]  # Limitar longitud
+                        marcas_str = "_".join(marcas_seleccionadas)[:50]
                         st.download_button(
                             "⬇️ Descargar CSV",
                             data=csv,
