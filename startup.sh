@@ -1,29 +1,21 @@
 #!/bin/bash
-echo "=== Iniciando aplicación en Azure ==="
+echo "==================================="
+echo "INICIANDO EN AZURE CON PYTHON 3.10"
+echo "==================================="
+echo "Fecha: $(date)"
+echo "Python version:"
+python --version
 
-# Mostrar información del entorno
-echo "Directorio actual: $(pwd)"
-echo "Python version: $(python --version)"
+echo "Instalando dependencias..."
+pip install --no-cache-dir -r requirements.txt
 
-# Crear directorio temporal si no existe
-mkdir -p /tmp
+echo "Verificando instalación..."
+pip list | grep streamlit
 
-# Instalar dependencias
-pip install -r requirements.txt
-
-# Verificar variables de entorno
-if [ -z "$SUPABASE_URL" ]; then
-    echo "⚠️ SUPABASE_URL no está configurada"
-else
-    echo "✅ SUPABASE_URL configurada"
-fi
-
-if [ -z "$SUPABASE_KEY" ]; then
-    echo "⚠️ SUPABASE_KEY no está configurada"
-else
-    echo "✅ SUPABASE_KEY configurada"
-fi
-
-# Iniciar la aplicación
-echo "🚀 Iniciando Streamlit..."
-streamlit run app.py --server.port 8000 --server.address 0.0.0.0 --server.enableCORS true --server.enableXsrfProtection false
+echo "Iniciando Streamlit..."
+streamlit run app.py \
+    --server.port=8000 \
+    --server.address=0.0.0.0 \
+    --server.enableCORS=true \
+    --server.enableXsrfProtection=false \
+    --server.maxUploadSize=100
