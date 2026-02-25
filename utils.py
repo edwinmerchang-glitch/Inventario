@@ -1,14 +1,11 @@
 import streamlit as st
 import pandas as pd
 import os
-import database as db
+
+ARCHIVO_ESCANEOS = "escaneos.csv"
 
 @st.cache_data(ttl=10)
-def cargar_escaneos_cached():
-    """Versión cacheada de carga de escaneos"""
-    return db.obtener_todos_escaneos()
-
-@st.cache_data(ttl=10)
-def cargar_productos_cached():
-    """Versión cacheada de carga de productos"""
-    return db.obtener_todos_productos()
+def cargar_escaneos():
+    if os.path.exists(ARCHIVO_ESCANEOS):
+        return pd.read_csv(ARCHIVO_ESCANEOS)
+    return pd.DataFrame()
