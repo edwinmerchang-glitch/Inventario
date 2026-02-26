@@ -1,5 +1,14 @@
 import os
+# En database.py, reemplaza:
 from supabase import create_client, Client
+
+# Por:
+try:
+    from supabase import create_client, Client
+    supabase_available = True
+except ImportError:
+    supabase_available = False
+    print("⚠️ Supabase no disponible, usando solo SQLite")
 import sqlite3
 import pandas as pd
 import streamlit as st
